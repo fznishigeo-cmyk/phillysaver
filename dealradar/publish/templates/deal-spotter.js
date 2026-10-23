@@ -37,6 +37,14 @@ function spotterAge(asOf) {
     document.addEventListener('click', event => { if (!menu.contains(event.target)) menu.open = false; });
   });
   namePlaceholders(); window.addEventListener('resize', namePlaceholders);
+  // Analytics never holds a click or a result. Every Amazon link in the tool area is one deal_click.
+  function track(name, params) {
+    try { if (typeof window.wpTrack === 'function') window.wpTrack(name, params); } catch (_) { /* tags only */ }
+  }
+  document.addEventListener('click', event => {
+    var a = event.target.closest && event.target.closest('#start a[href], #spotter-result a[href]');
+    if (a && /(^|\.)amazon\.com$/.test(a.hostname)) track('deal_click', {store:'Amazon'});
+  });
   if (!modal) return;
 
   function inputError(message, field) {
@@ -135,6 +143,7 @@ function spotterAge(asOf) {
     history.replaceState(null, '', shareURL.pathname + shareURL.search);
     $('result-title').focus({preventScroll:true});
     $('spotter-result').scrollIntoView({block:'start', behavior:'instant'});
+    track('tool_grade', {method:'deal_' + grade.grade.toLowerCase()});
   }
   function tick(task) {
     if (!current(task)) return;

@@ -66,6 +66,9 @@ async function contrastAudit(page) {
           Math.random=()=>0;
           // Amazon clicks are recorded, never followed (the run stays offline).
           window.amazonClicks=[];document.addEventListener('click',e=>{const a=e.target.closest&&e.target.closest('a[href^="https://www.amazon.com/"]');if(a){window.amazonClicks.push({href:a.href,target:a.target,rel:a.rel});e.preventDefault();}},true);
+          // The page's own wpTrack is wrapped: each tool event is recorded, then sent as usual.
+          let wpTrack;window.tracked=[];Object.defineProperty(window,'wpTrack',{configurable:true,set(fn){wpTrack=fn;},
+            get(){return wpTrack&&((name,params)=>{if(['deal_click','tool_grade'].includes(name))window.tracked.push([name,params]);return wpTrack(name,params);});}});
           window.layoutShift=0;
           new PerformanceObserver(list=>{for(const e of list.getEntries()) if(!e.hadRecentInput) window.layoutShift+=e.value;}).observe({type:'layout-shift',buffered:true});
         });
@@ -130,6 +133,10 @@ async function contrastAudit(page) {
         assert.equal((await named.innerText()).trim(),'See highly rated wireless headphones on Amazon →');
         assert(await named.evaluate(e=>e===document.activeElement)); assert.equal(await page.locator('#input-error').textContent(),'');
         assert.equal(await page.locator('#name-results .name-hint').textContent(),'For an A, B or C grade, paste the product’s Amazon link.');
+        // A typed name is not a grade; its Amazon button is one deal_click and still opens.
+        assert.deepEqual(await page.evaluate(()=>window.tracked),[]);await named.click();
+        assert.deepEqual(await page.evaluate(()=>window.tracked.splice(0)),[['deal_click',{store:'Amazon'}]]);
+        assert.equal((await page.evaluate(()=>window.amazonClicks.pop())).href,await named.getAttribute('href'));
         assert(!/★|☆|out of 5|\b\d[\d,]*\s+(?:ratings|reviews)\b/i.test(await page.locator('main').innerText()));
         await geometry(); await shot('name');
         // The adult filter applies: no button, only the paste-a-link hint.
@@ -165,10 +172,14 @@ async function contrastAudit(page) {
           const buy=await page.locator('#result-buy').getAttribute('href');
           assert.equal(await page.locator('#result-photo').getAttribute('aria-label'),'See Wireless over-ear headphones with a comfortable folding design on Amazon');
           assert.equal(await page.locator('#grade-letter').getAttribute('aria-label'),`Grade ${next} — see it on Amazon`);
-          for(const selector of ['#result-photo img','#grade-letter']){
+          // GA4 hears each shown grade once, through the shipped dispatch (tool_grade_event: true).
+          assert.deepEqual(await page.evaluate(()=>window.tracked.splice(0)),[['tool_grade',{method:'deal_'+next.toLowerCase()}]]);
+          assert.equal(await page.evaluate(()=>window.dataLayer.filter(a=>a[0]==='event'&&a[1]==='tool_grade').map(a=>a[2].method).pop()),'deal_'+next.toLowerCase());
+          for(const selector of ['#result-photo img','#grade-letter','#result-buy']){
             const spot=page.locator(selector);await spot.scrollIntoViewIfNeeded();const box=await spot.boundingBox();
             await page.mouse.click(box.x+box.width/2,box.y+box.height/2);
             assert.deepEqual(await page.evaluate(()=>window.amazonClicks.pop()),{href:buy,target:'_blank',rel:'sponsored nofollow noopener'},selector);
+            assert.deepEqual(await page.evaluate(()=>window.tracked.splice(0)),[['deal_click',{store:'Amazon'}]],selector);
           }
           await page.locator('.price-disclaimer summary').click();assert(await page.locator('.price-disclaimer').evaluate(e=>e.open));
           assert.equal(await page.evaluate(()=>window.amazonClicks.length),0);assert.match(page.url(),/\?asin=B0D8KZHN1Q$/);

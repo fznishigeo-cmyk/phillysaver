@@ -3,6 +3,7 @@ conversion hooks: fully offline (the consent behaviour runs under node)."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -745,3 +746,57 @@ def test_a_second_impact_verification_keeps_the_first():
     for value in ("1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d", "46843b39-5068-4c26-bb6b-8e69aedf615e"):
         assert snippet.count(f'<meta name="impact-site-verification" value="{value}" '
                              f'content="{value}">') == 1
+
+
+# ---- tool pages: which grade a link result shows ----
+
+TOOL_GRADE = ('\n    tool_grade: { ga4Only: true, methods: '
+              '["deal_a", "deal_b", "deal_c", "review_a", "review_b", "review_c"] },')
+
+
+def test_tool_grade_switch_ships_on_defaults_off_and_is_strict(tmp_path):
+    assert load_config().tool_grade_event is True
+    assert AppConfig().tool_grade_event is False
+    path = tmp_path / "config.yaml"
+    for value in (None, 0, 1, "true", [], {}):
+        path.write_text(json.dumps({"tool_grade_event": value}))
+        with pytest.raises(ValueError, match="^tool_grade_event must be"):
+            load_config(path)
+
+
+def test_tool_grade_off_keeps_every_snippet_byte_and_on_adds_only_its_entry():
+    off = head_snippet(AppConfig(tracking=SAMPLE))
+    # Recorded at 96bbb2d, before the switch existed.
+    assert hashlib.sha256(off.encode()).hexdigest() == "6f52349c77c7ebd83341e93848342975df87ffab1d95da8d12b8359e84d5c581"
+    on = head_snippet(AppConfig(tracking=SAMPLE, tool_grade_event=True))
+    assert "tool_grade" not in off and on.count(TOOL_GRADE) == 1
+    assert on.replace(TOOL_GRADE, "", 1) == off
+    shipped = load_config()
+    on = head_snippet(shipped)
+    shipped.tool_grade_event = False
+    assert on.count(TOOL_GRADE) == 1 and on.replace(TOOL_GRADE, "", 1) == head_snippet(shipped)
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_tool_grade_is_ga4_only_with_six_methods_and_deal_click_names_amazon(tmp_path, enabled):
+    if not shutil.which("node"):
+        pytest.skip("node unavailable")
+    methods = ["deal_a", "deal_b", "deal_c", "review_a", "review_b", "review_c"]
+    calls = [["tool_grade", {"method": m, "asin": "PRIVATE-ASIN", "store": "PRIVATE-STORE"}] for m in methods]
+    invalid = [["tool_grade", params] for params in [{}, {"method": "deal_d"}, {"method": "DEAL_A"},
+                                                     {"method": ["deal_a"]}, {"method": "constructor"}]]
+    (tmp_path / "snippet.js").write_text(_script(head_snippet(AppConfig(tracking=SAMPLE, tool_grade_event=enabled))))
+    (tmp_path / "harness.cjs").write_text(HARNESS)
+    (tmp_path / "scenarios.json").write_text(json.dumps({"open": {
+        "calls": calls + invalid + [["deal_click", {"store": "Amazon"}]]}}))
+    result = subprocess.run(["node", "harness.cjs", "snippet.js", "scenarios.json"], cwd=tmp_path,
+                            capture_output=True, text=True, check=True)
+    out = json.loads(result.stdout)["open"]
+    assert out["error"] is None
+    ga4 = SAMPLE["ga4_measurement_id"]
+    grades = [["event", "tool_grade", {"method": m, "send_to": ga4}] for m in methods] if enabled else []
+    assert [e for e in out["dataLayer"] if e[0] == "event"] == grades + [
+        ["event", "deal_click", {"store": "Amazon", "send_to": ga4}]]
+    assert "PRIVATE" not in json.dumps(out)
+    assert all("tool_grade" not in json.dumps(out[tag]) for tag in ("fbq", "ttq", "pintrk", "uetq"))
+    assert "DealClick" in json.dumps(out["fbq"])
