@@ -210,11 +210,19 @@ def send_alerts(db, cfg, now: datetime, *, dry_run: bool | None = None, http_cli
             if not prepare_delivery(db, "telegram", dedup_token, now, run_key):
                 skipped += 1
                 continue
-            resp = client.post(
-                f"https://api.telegram.org/bot{token}/sendMessage",
-                json={"chat_id": channel, "text": msg,
-                      "disable_web_page_preview": False},
-            )
+            try:
+                resp = client.post(
+                    f"https://api.telegram.org/bot{token}/sendMessage",
+                    json={"chat_id": channel, "text": msg,
+                          "disable_web_page_preview": False},
+                )
+            except httpx.HTTPError as exc:
+                # A timeout may still have delivered it: keep the outgoing claim
+                # (never resent) and stop for this run; the deploy must go on.
+                logger.error("telegram send failed (%s) for %s; stopping this run",
+                             type(exc).__name__, key)
+                skipped += 1
+                break
             if resp.status_code != 200:
                 if 400 <= resp.status_code < 500:
                     db.finish_outgoing("telegram", dedup_token, now, rejected=True)

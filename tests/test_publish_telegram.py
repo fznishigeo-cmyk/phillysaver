@@ -9,6 +9,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
+import httpx
+
 import pytest
 
 from dealradar.config import load_config
@@ -406,6 +408,26 @@ def test_uncertain_post_is_not_retried(db, cfg, monkeypatch):
     assert db.last_alert("walmart|lego set", "telegram") is None
     assert len(failing.posts) == 1  # failures also respect the per-run budget
     assert send_alerts(db, cfg, NOW, http_client=FakeHttpClient())["sent"] == 0
+    assert db.outgoing_for("telegram")[0]["status"] == "pending"
+
+
+class TimeoutHttpClient(FakeHttpClient):
+    def post(self, url, json=None, **kwargs):
+        self.posts.append((url, json))
+        raise httpx.ReadTimeout("The read operation timed out")
+
+
+def test_network_error_keeps_claim_and_does_not_crash_the_run(db, cfg, monkeypatch, caplog):
+    # Live 2026-10-23 fast lane #839: a Telegram read timeout crashed the run and skipped the deploy.
+    set_creds(monkeypatch)
+    published(db, cfg, [make_deal(), make_deal(dedupe_key="second-pick")])
+    timing_out = TimeoutHttpClient()
+    assert send_alerts(db, cfg, NOW, http_client=timing_out) == {
+        "sent": 0, "skipped": 1, "dry_run": False}
+    assert len(timing_out.posts) == 1
+    assert "ReadTimeout" in caplog.text and "api.telegram.org" not in caplog.text
+    assert db.last_alert("walmart|lego set", "telegram") is None
+    assert send_alerts(db, cfg, NOW, http_client=FakeHttpClient())["sent"] == 0  # never resent
     assert db.outgoing_for("telegram")[0]["status"] == "pending"
 
 
