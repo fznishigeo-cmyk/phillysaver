@@ -153,7 +153,7 @@ function spotterAge(asOf) {
       task.controller = new AbortController();
       var data;
       try {
-        // Past the server's 10 s wait for Keepa's live refresh (functions/api/search.js).
+        // Past the server's 10 s wait for a live price refresh (functions/api/search.js).
         task.timeout = setTimeout(() => task.controller.abort(), 14000);
         var response = await fetch('/api/search?asin=' + task.input.asin + '&grade=deal',
           {signal:task.controller.signal, cache:'no-store', credentials:'omit', referrerPolicy:'no-referrer'});
