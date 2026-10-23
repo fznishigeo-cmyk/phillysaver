@@ -172,6 +172,8 @@ class ClaudeParser:
         self.ledger_spend_usd = 0.0
         self._ledger = None
         self._run_key = ""
+        # time.monotonic() after which no paid call starts (fetch.paid_work_stop_s).
+        self.paid_stop: float | None = None
         # The extraction schema (LLMDeals) is rejected by the structured
         # messages.parse endpoint as "Schema is too complex" — and that
         # rejection takes MINUTES to return, so paying it even once per run
@@ -298,6 +300,9 @@ class ClaudeParser:
                 + kwargs["max_tokens"] * float(pricing["output"])) / 1e6
 
     def _reserve(self, kwargs: dict, *, kind="other", source_name="") -> tuple[str, float]:
+        if self.paid_stop is not None and time.monotonic() >= self.paid_stop:
+            # Every caller stops on SpendCapReached and retries next run.
+            raise SpendCapReached("run time limit (fetch.paid_work_stop_s): no new paid calls")
         key = uuid.uuid4().hex
         with self._spend_lock:
             tier = self.cfg.critic_tiering
