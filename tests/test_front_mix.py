@@ -211,6 +211,45 @@ def test_best_deals_today_lead():
     assert front_mix.lead(few, SHIPPED.front_page)[10:] == [d for d in few if "pick" not in d]
 
 
+def test_best_deals_today_fills_short_shares_past_the_pick_cut():
+    """Live 2026-10-23 10:18Z: beauty 1, electronics 0 of 30 because top picks
+    held almost none; each share now continues with its bucket's next eligible
+    deals (best first); deals outside that list never fill a share."""
+    rows = inventory(AMPLE)
+    for d in rows:
+        if d.get("mx") in ("beauty", "electronics"):
+            d.pop("pick", None)
+    for d in rows:
+        d["dedupe_key"] = d["key"]
+    eligible = [f"beauty-{i}" for i in range(50, 40, -1)] + ["electronics-20", "electronics-3", "electronics-9"]
+    head = front_mix.lead(rows, SHIPPED.front_page, eligible)[:30]
+    assert Counter(front_mix.label(d, TARGET) for d in head) == TARGET
+    assert [d["key"] for d in head if d.get("mx") == "beauty"] == eligible[:7]
+    assert [d["key"] for d in head if d.get("mx") == "electronics"] == eligible[-3:]
+    # Short of eligible deals too: the share yields its turns, as before.
+    head = front_mix.lead(rows, SHIPPED.front_page, eligible[:2])[:30]
+    assert Counter(front_mix.label(d, TARGET) for d in head)["beauty"] == 2
+    assert front_mix.lead(rows, SHIPPED.front_page)[:30] == front_mix.lead(rows, SHIPPED.front_page, ())[:30]
+    assert not any(d.get("mx") in ("beauty", "electronics") for d in front_mix.lead(rows, SHIPPED.front_page)[:30])
+
+
+def test_extras_use_the_top_pick_checks():
+    from tests.test_publish_site import make_deal
+    cfg = load_config()
+    cfg.keepa_click_price_rule = "off"
+    good = [make_deal(dedupe_key=f"good-{i}", item=f"Lipstick set {i}", category="beauty", codes=[]) for i in range(3)]
+    bad = [make_deal(dedupe_key="unconfirmed", item="Mascara", price_unconfirmed=True),
+           make_deal(dedupe_key="aged", item="Serum", price_aged="Price from 9 h ago"),
+           make_deal(dedupe_key="dull", item="Shampoo", _appeal_score=1),
+           make_deal(dedupe_key="adult", item="Rose toy vibrator", category="beauty"),
+           make_deal(dedupe_key="picked", item="Moisturizer")]
+    candidates = [(good[0], 5.0), (bad[0], 9.0), (good[1], 7.0), (bad[1], 8.0), (bad[2], 6.0),
+                  (bad[3], 10.0), (bad[4], 11.0), (good[2], None)]
+    assert front_mix.extras(candidates, {"picked"}, cfg, NOW) == ["good-1", "good-0"]
+    cfg.front_page["mix"]["enabled"] = False
+    assert front_mix.extras(candidates, set(), cfg, NOW) == []
+
+
 def test_published_labels_rules_and_best_deals_today(tmp_path):
     from tests.test_publish_site import make_deal
     titles = [("Women's Lace Bralette", "fashion"), ("Matte Lipstick Set", "beauty"),

@@ -1115,7 +1115,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
             source_deals: list[dict[str, Any]], *, spotlight: list[dict[str, Any]] | None = None,
             deal_pages: tuple[dict[str, str], list[dict[str, Any]], dict[str, str], dict[str, int]],
             products: dict | None = None,
-            run_key: str | None = None, offsite_protected_keys=None) -> tuple[list[str], str]:
+            run_key: str | None = None, offsite_protected_keys=None, best_extra=()) -> tuple[list[str], str]:
     """Emit the wall, hubs and deal pages; return paths and the static wall.
 
     publish_sitemap reads the final tracked pages for dates and the audit.
@@ -1288,7 +1288,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     intro = (f"The {min(30, len(confirmed))} best of {count} live deals right now."
              if confirmed else "Our top picks are selected from offers that pass our price checks.")
     from ..front_mix import lead
-    best_rows = lead(pick_order(confirmed, cfg.front_page), cfg.front_page)[:30]
+    best_rows = lead(pick_order(confirmed, cfg.front_page), cfg.front_page, best_extra)[:30]
     best_content = ('<h2 class="sr-only">Best live deals</h2>' + _best_summary(best_rows)
                     + '<div class="grid">' + cards_html(best_rows, paths, now, static_photos=cfg.static_photos,
                                                        credit_links=cfg.credit_links)

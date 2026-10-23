@@ -954,6 +954,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     original_picks = top_picks(pick_candidates, drop_fresh.pick_options(cfg), now,
                                summary=checkout_summary, cfg=cfg, boosted=boosted)
     original_picks = drop_rotation.prepare_picks(original_picks, cfg, boosted)
+    best_extra = front_mix.extras(pick_candidates, {d["dedupe_key"] for d in original_picks}, cfg, now)
     picked = [public_candidates[d["dedupe_key"]] for d in original_picks]
     for n, d in enumerate(picked, 1):
         d["pick"] = n
@@ -1410,7 +1411,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                                      spotlight=spotlight, deal_pages=deal_pages,
                                      products=products,
                                      run_key=(last_run or {}).get("run_key"),
-                                     offsite_protected_keys=offsite_keys)
+                                     offsite_protected_keys=offsite_keys, best_extra=best_extra)
     checker_summary = {}
     if cfg.checker["enabled"]:
         checker_summary = checker.publish(out, cfg, now, checker.build(

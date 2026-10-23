@@ -90,13 +90,38 @@ def schedule(found, total, caps):
     return out
 
 
-def lead(rows, front_page, n=30):
-    """Best deals today: the first n top picks by bucket share, each bucket in
-    rank order. A bucket short of picks yields its turns; the rest follow."""
+def extras(candidates, picked, cfg, now):
+    """Keys of the deals top picks would also take but for their count, best
+    score first: the same per-deal checks as rank.top_picks (adult titles never)."""
+    from . import checkout_prices
+    from .appeal import blocked
+    from .click_price import excluded
+    from .verify import _price_hidden_by_promo
+    if not shares(cfg.front_page):
+        return []
+    options = cfg.front_page.get("appeal") or {}
+    checkout = (cfg.front_page.get("checkout_price_deals") or {}).get("enabled", False)
+    out = []
+    for deal, _ in sorted((p for p in candidates if p[1] is not None), key=lambda p: p[1], reverse=True):
+        if (deal["dedupe_key"] in picked or deal.get("price_unconfirmed") or deal.get("price_aged")
+                or deal.get("_appeal_score") == 1 or blocked(deal, options) or excluded(deal, cfg, now)
+                or (checkout and _price_hidden_by_promo(deal) and checkout_prices.pick_evidence(deal, cfg, now)[0])):
+            continue
+        out.append(deal["dedupe_key"])
+    return out
+
+
+def lead(rows, front_page, extra=(), n=30):
+    """Best deals today: the first n by bucket share, each bucket in rank order:
+    its top picks, then (operator 2026-10-23) its next eligible deals (extra,
+    best first). A bucket short of both yields its turns; the rest follow."""
     found = shares(front_page)
     if not found:
         return rows
+    order = {key: i for i, key in enumerate(extra)}
     picks = [d for d in rows if d.get("pick") is not None]
+    picks += sorted((d for d in rows if d.get("pick") is None and d.get("dedupe_key") in order),
+                    key=lambda d: order[d["dedupe_key"]])
     queues = {name: deque(d for d in picks if label(d, found) == name) for name in found}
     head = [queues[name].popleft() for name in schedule(
         found, min(n, len(picks)), {name: len(q) for name, q in queues.items()})]
