@@ -2270,6 +2270,10 @@ def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime, *,
             else:
                 log.warning("deal critic flagged %s as suspect MSRP: %s",
                             deal["dedupe_key"], verdict.get("reason", ""))
+        elif legitimacy.settled_critic(verdict) and not (deal.get("audit") or {}).get("applied_reject"):
+            # A settled approval (e.g. Sonnet after a Haiku rejection) replaces
+            # the critic's own rejection; an enforced audit rejection stays.
+            payload["flags"] = [f for f in payload.get("flags") or [] if f != "suspect_msrp"]
         db.update_deal(deal["dedupe_key"], payload=payload)
         deal["critic"] = verdict  # available for reuse by later batches
         if tiered:

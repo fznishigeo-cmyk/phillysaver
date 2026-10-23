@@ -609,3 +609,36 @@ def test_haiku_only_must_be_a_boolean(tmp_path):
     path.write_text("parse:\n  critic_tiering:\n    enabled: true\n    haiku_only: \"yes\"\n")
     with pytest.raises(ValueError, match="haiku_only"):
         load_config(path)
+
+
+def test_sonnet_approval_clears_an_earlier_haiku_rejection(tmp_path):
+    # Live routing (haiku_only): a confident Haiku rejection is final until the
+    # sticky fallback sends the deal back to Sonnet. Sonnet's approval then
+    # replaces the verdict, and the critic's own suspect_msrp must go with it.
+    db = DB(tmp_path / "state.db")
+    parser, _ = tier_parser(haiku_only=True)
+    add(db, "kill-widget")
+    pipeline._run_critic(db, parser.cfg, parser, NOW)
+    assert "suspect_msrp" in db.get_deal("kill-widget")["flags"]
+    db.meta_set(critic_tiering.FALLBACK, "offline fallback")
+    next_parser, next_messages = tier_parser(TierMessages(sonnet_kills=False), haiku_only=True)
+    pipeline._run_critic(db, next_parser.cfg, next_parser, NOW)
+    row = db.get_deal("kill-widget")
+    assert [c["model"] for c in next_messages.calls] == [SONNET]
+    assert row["critic"]["model"] == SONNET and row["critic"]["plausible"]
+    assert "suspect_msrp" not in row["flags"]
+    assert rank.is_publishable(row, next_parser.cfg)[0]
+    db.close()
+
+
+def test_critic_approval_keeps_an_enforced_audit_rejection(tmp_path):
+    db = DB(tmp_path / "state.db")
+    parser, _ = tier_parser(haiku_only=True)
+    parser.cfg.audit_mode = "enforce"
+    add(db, "widget", flags=["unit_mismatch"])  # audit: reject (unit_pack_mismatch)
+    pipeline._run_critic(db, parser.cfg, parser, NOW)
+    row = db.get_deal("widget")
+    assert row["audit"]["applied_reject"] and row["critic"]["plausible"]
+    assert "suspect_msrp" in row["flags"]
+    assert not rank.is_publishable(row, parser.cfg)[0]
+    db.close()
