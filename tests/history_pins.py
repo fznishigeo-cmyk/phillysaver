@@ -454,6 +454,7 @@ def pre_task_319_raw(config):
     config.pop("tool_words_analyzer", None)
     config.pop("soft_buttons", None)
     config.pop("keep_first_cards", None)
+    config.pop("best_today_tab", None)
     config.pop("price_shipping_note", None)
     config.pop("add_to_cart", None)
     pre_social_profiles_raw(config)
@@ -541,6 +542,7 @@ def pre_hide_deal_site_links_raw(config):
     config.pop("tool_words_analyzer", None)
     config.pop("soft_buttons", None)
     config.pop("keep_first_cards", None)
+    config.pop("best_today_tab", None)
     config.pop("price_shipping_note", None)
     config.pop("add_to_cart", None)
     pre_social_profiles_raw(config)
@@ -566,6 +568,7 @@ def pre_keepa_focus_finder_raw(config):
     config.pop("tool_words_analyzer", None)
     config.pop("soft_buttons", None)
     config.pop("keep_first_cards", None)
+    config.pop("best_today_tab", None)
     config.pop("price_shipping_note", None)
     config.pop("add_to_cart", None)
     pre_social_profiles_raw(config)
@@ -649,6 +652,7 @@ def pre_keepa_starter_raw(config):
     config.pop("tool_words_analyzer", None)
     config.pop("soft_buttons", None)
     config.pop("keep_first_cards", None)
+    config.pop("best_today_tab", None)
     config.pop("price_shipping_note", None)
     config.pop("add_to_cart", None)
     pre_social_profiles_raw(config)
@@ -720,6 +724,7 @@ def pre_social_profiles(cfg):
     pre_tool_words_analyzer(cfg)
     pre_soft_buttons(cfg)
     pre_keep_first_cards(cfg)
+    pre_best_today_tab(cfg)
     return cfg
 
 
@@ -744,6 +749,12 @@ def pre_soft_buttons(cfg):
 def pre_keep_first_cards(cfg):
     """Before the home wall kept the server's cards (quality loop 2026-10-23: phone LCP / taps)."""
     cfg.keep_first_cards = False
+    return cfg
+
+
+def pre_best_today_tab(cfg):
+    """Before the home tab row's "Best today" link pill (operator 2026-10-23 ~20:00Z, A48)."""
+    cfg.best_today_tab = False
     return cfg
 
 

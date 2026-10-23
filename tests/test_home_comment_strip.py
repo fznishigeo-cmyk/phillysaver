@@ -12,7 +12,7 @@ from dealradar.config import AppConfig, load_config
 from dealradar.db import DB
 from dealradar.publish import comments, site
 from scripts.publication_budget import analyze
-from tests.history_pins import pre_front_mix
+from tests.history_pins import pre_best_today_tab, pre_front_mix
 from tests.phone_budget_fixture import Inline, NOW, publish_fixture, visible_offer_count
 from tests.test_offscreen_cards import offers
 from tests.test_publish_site import make_deal
@@ -234,6 +234,7 @@ def test_final_page_parses_and_enabled_rerun_is_idempotent(tmp_path, mode):
 
 def test_enabled_shipped_phone_budget_with_headroom(tmp_path):
     cfg = pre_front_mix(load_config())  # The mix's card selection is guarded in test_front_mix (no added markup, bounded card cost).
+    pre_best_today_tab(cfg)  # The home pill's ~60 bytes are bounded in test_best_today_tab (ceiling kept with it on).
     cfg.phone_budget["enabled"] = True
     measurements = {}
     for enabled in (False, True):

@@ -65,6 +65,7 @@ from . import search_more
 from . import drop_fresh
 from . import fresh_more_plain
 from . import keep_first_cards
+from . import best_today_tab
 from . import drop_shuffle
 
 logger = logging.getLogger("dealradar.publish.site")
@@ -1239,6 +1240,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     site_version = soft_buttons.site_version(site_version, cfg)
     site_version = tools_merge.site_version(site_version, cfg)
     site_version = shipping_note.site_version(site_version, cfg)
+    site_version = best_today_tab.site_version(site_version, cfg)
     if cfg.brand_pages:
         site_version = hashlib.sha256((site_version + "brand-pages").encode()).hexdigest()[:12]
     if cfg.open_box_scarcity or (cfg.front_page.get("appeal", {}).get("want") or {}).get("enabled"):
@@ -1542,6 +1544,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     sticky_buy_bar.publish(out, cfg)
     soft_buttons.publish(out, cfg)
     tools_merge.publish(out, cfg)
+    best_today_tab.publish(out, cfg)
     from . import add_to_cart
     add_to_cart.publish(out, cfg)
     timed("page_passes")

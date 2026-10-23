@@ -244,7 +244,7 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
-- **Hourly Keepa overflow (branch `keepa-leak`, 2026-10-23; uncommitted):**
+- **Hourly Keepa overflow (dad61e5, 2026-10-23; ships with relR):**
   Hourly #352 admitted only 10 Buy Box candidates despite a 350-token surplus:
   ordinary cadence excluded other top deals before the surplus queue. New
   strict `keepa.hourly_surplus_buybox` defaults false and ships true, admitting
@@ -256,10 +256,22 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   checks spend 400 forecast tokens on top Buy Box then rest; rollback, reserve,
   time, retry and same-run checks pass. Related-file selection: **331 passed
   in 672.27s**, including offline rerun idempotency; final ordering-guard
-  follow-up: **17 hourly checks passed in 27.17s**. Diff check passes. Commands
-  and source-line diagnosis are in root `KEEPA_LEAK_REPORT.md` (remove before
-  commit). Remaining: review, deploy and measure live overflow/candidates.
-  No commit, push, live API call or full suite.
+  follow-up: **17 hourly checks passed in 27.17s**. Diff check passes. Remaining:
+  measure live overflow/candidates after deploy.
+- **"Best today" home pill (A48, branch `best-tab`, 2026-10-23; ON, committed,
+  not pushed):** operator ~20:00Z: "yes add that button" (/best-deals-today/
+  had no homepage link). `best_today_tab: true` (strict bool, default false;
+  `publish/best_today_tab.py`): a `.cattab` link right after Trending in the
+  home row, no `data-i`, so renderTabs redraws it in place and binds filters
+  only to `.cattab[data-i]`. No GA4 event (no generic nav-link event exists).
+  Off: no byte (`pre_best_today_tab`). Real Chromium: phones keep one sideways
+  row (52px), 1280 wraps to two lines either way; desktop windows ~920-1030px
+  wide get a third line (+51px, static from first paint). Phone budget: home
+  HTML gzip +61 bytes (fixture headroom 1,012 → 951: under the ceiling, below
+  the tests' 1,000 reserve, which was already nearly used up); the two reserve
+  tests pin it off and `test_phone_budget_cost_is_bounded` caps it (HTML <= 64,
+  inline JS <= 40). Operator call: accept, or win bytes back elsewhere. Tests
+  `tests/test_best_today_tab.py` (runs `tests/best_today_tab_browser.cjs`).
 - **Phone home LCP / taps (branch `phone-lcp`, 2026-10-23; `keep_first_cards` ON,
   committed, not pushed):** the drop module's first render replaced the server's
   whole card wall (`content.innerHTML`) with the same cards, and its open How box
