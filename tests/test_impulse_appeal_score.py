@@ -20,6 +20,7 @@ from dealradar.db import DB
 from dealradar.parse.claude_client import ClaudeParser
 from dealradar.publish import seo, site
 from dealradar.util import iso
+from tests.history_pins import pre_feel_good
 from tests.test_appeal import tree
 from tests.test_front_page import browser, pick_deal
 from tests.test_publish_site import NOW
@@ -291,7 +292,7 @@ def test_popularity_quota_uses_capped_marginal_with_ratings():
 
 @pytest.mark.parametrize("gadget_rating", [4, 5])
 def test_shaker_stays_on_wall_gadget_moves_up_and_public_scores_are_unchanged(database, tmp_path, caplog, gadget_rating):
-    cfg = settings()
+    cfg = pre_feel_good(settings())  # recorded with equal category factors
     cfg.front_page["appeal"]["want"]["enabled"] = False
     cfg.front_page["appeal"]["season"] = []
     cfg.front_page["top_picks"].update(max_same_store=120, max_same_category=120, max_same_brand=120,

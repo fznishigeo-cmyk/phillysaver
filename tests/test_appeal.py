@@ -99,10 +99,10 @@ def test_config_defaults_and_shipped_knobs(tmp_path):
     assert not load_config(path).front_page.get("appeal", {}).get("enabled", False)
     appeal = load_config().front_page["appeal"]
     assert appeal["enabled"] and appeal["niche_factor"] == .25
-    assert appeal["category_factors"] == {
-        "home": 1.15, "kitchen": 1.15, "beauty": 1.15, "fashion": 1.15,
+    assert appeal["category_factors"] == {  # operator 2026-10-23: beauty, home and kitchen stand out
+        "home": 1.3, "kitchen": 1.3, "beauty": 1.35, "fashion": 1.15,
         "toys_games": 1.05, "kids_baby": 1.05, "health": 1.05, "grocery": 1.05,
-        "electronics": 1.15, "auto": .85}
+        "electronics": 1.0, "auto": .85}
 
 
 def test_only_pick_score_changes_and_all_factors_are_configurable():

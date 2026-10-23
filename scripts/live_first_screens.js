@@ -56,6 +56,26 @@ function report(label, cards) {
                   grids: [...document.querySelectorAll("#content .grid")].map(g => g.querySelectorAll(".card").length)};
         });
         console.log(`deals.json and page: ${JSON.stringify(facts)}`);
+        // Front mix (operator 2026-10-22): buckets of the first 30 Trending cards and of
+        // Best deals today, and the live supply per bucket. Public labels and titles only.
+        const mix = await page.evaluate(async () => {
+          const j = await fetch("/deals.json?t=" + Date.now(), {cache: "no-store"}).then(r => r.json()).catch(() => ({}));
+          const deals = Array.isArray(j.deals) ? j.deals : [], label = d => (d && d.mx) || "rest";
+          const asset = (document.documentElement.innerHTML.match(/\/drop-fresh\.js\?v=\w+/) || [])[0];
+          const rules = asset ? await fetch(asset).then(r => r.text()).catch(() => "") : "";
+          const shares = JSON.parse((rules.match(/freshRules\.buckets = (\{[^}]*\})/) || [])[1] || "{}");
+          const names = Object.keys(shares).length ? Object.keys(shares) : [...new Set(deals.map(label))];
+          const line = rows => names.map(n => `${n} ${rows.filter(d => label(d) === n).length}`).join(", ");
+          const byKey = new Map(deals.map(d => [d.key, d])), byTitle = new Map(deals.map(d => [d.item, d]));
+          const front = [...document.querySelectorAll("#content .card[data-key]")].slice(0, 30).map(c => byKey.get(c.getAttribute("data-key")));
+          const page = new DOMParser().parseFromString(await fetch("/best-deals-today/").then(r => r.text()).catch(() => ""), "text/html");
+          const best = [...page.querySelectorAll(".card .title")].slice(0, 30).map(t => byTitle.get(t.textContent.trim()));
+          return {front: line(front), best: line(best), target: names.map(n => shares[n] ?? "?").join(", "),
+                  supply: line(deals.filter(d => d.status === "alive" && !d.locked)), on: Object.keys(shares).length > 0};
+        });
+        console.log(`front mix (first 30): ${mix.front} (target ${mix.target}${mix.on ? "" : "; mix not published"})`);
+        console.log(`best deals today mix (first 30): ${mix.best}`);
+        console.log(`live supply by bucket: ${mix.supply}`);
         console.log(`\nscrolling Trending: cards ${counts.join(" -> ")}; Show more deals button ${more ? "visible" : "not visible"}`);
         await page.evaluate(() => window.scrollTo(0, 0));
         // Empty search, then the logo: a visitor must land back on the fresh homepage.

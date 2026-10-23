@@ -699,6 +699,7 @@ def pre_social_profiles(cfg):
     pre_tool_grade_event(cfg)
     pre_sticky_buy_bar(cfg)
     pre_add_to_cart(cfg)
+    pre_front_mix(cfg)
     return cfg
 
 
@@ -716,6 +717,83 @@ def pre_add_to_cart(cfg):
 
 def pre_social_profiles_raw(config):
     config.get("social", {}).pop("profiles", None)
+    pre_front_mix_raw(config)
+    return config
+
+
+# Front mix (operator 2026-10-22): bucket shares of every 30 front cards and the
+# women's allure words it added. Recorded fixtures keep the earlier front page.
+PRE_FRONT_MIX_ALLURE = {"lace teddy", "chemise", "silk slip", "slip dress", "bustier", "garter", "thigh highs",
+                        "fishnet stockings", "lace stockings", "silk pajamas", "nightie", "bodycon dress",
+                        "cocktail dress"}
+
+
+def _pre_front_mix(front_page):
+    if not isinstance(front_page, dict):
+        return
+    front_page.pop("mix", None)
+    groups = ((front_page.get("appeal") or {}).get("want") or {}).get("groups")
+    if isinstance(groups, dict) and isinstance(groups.get("allure"), list):
+        groups["allure"] = [w for w in groups["allure"] if w not in PRE_FRONT_MIX_ALLURE]
+
+
+def pre_front_mix(cfg):
+    """Before the front mix; never re-pin recorded publication bytes."""
+    pre_feel_good(cfg)
+    _pre_front_mix(cfg.front_page)
+    return cfg
+
+
+def pre_front_mix_raw(config):
+    pre_feel_good_raw(config)
+    _pre_front_mix(config.get("publish", {}).get("front_page"))
+    return config
+
+
+# Operator 2026-10-23 ~00:05Z: beauty/home/kitchen lifts, the "feel good" group and
+# everyday prices from $30. Recorded fixtures keep the earlier factors and groups.
+PRE_FEEL_GOOD_FACTORS = {"home": 1.15, "kitchen": 1.15, "beauty": 1.15, "electronics": 1.15}
+PRE_FEEL_GOOD_GROUPS = {
+    "basics": ["underwear", "boxer", "briefs", "socks", "leggings", "pajamas", "slippers",
+               "sneakers", "shoes", "hat", "beanie"],
+    "carry": ["owala", "stanley", "hydro flask", "yeti", "tumbler", "water bottle"],
+    "beauty": ["perfume", "makeup", "lipstick", "mascara", "skincare", "serum", "moisturizer", "sunscreen",
+               "shampoo", "conditioner", "hair dryer", "straightener", "curling iron", "nail", "lip gloss"],
+    "wear & carry": ["sunglasses", "purse", "handbag", "tote", "backpack", "jewelry",
+                     "earrings", "necklace", "bracelet", "dress", "pajama set"],
+    "home": ["towels", "sheets", "pillow", "blanket", "throw", "candle", "storage bins",
+             "organizer", "vacuum", "air purifier", "humidifier", "string lights"],
+}
+PRE_FEEL_GOOD_EVERYDAY = {"full_until": 40, "floor_from": 100, "floor_factor": 0.55}
+
+
+def _pre_feel_good(front_page):
+    if not isinstance(front_page, dict):
+        return
+    appeal = front_page.get("appeal") or {}
+    factors = appeal.get("category_factors")
+    if isinstance(factors, dict):
+        factors.update({k: v for k, v in PRE_FEEL_GOOD_FACTORS.items() if k in factors})
+    want = appeal.get("want") or {}
+    if isinstance(want.get("groups"), dict) and "feel good" in want["groups"]:
+        want["groups"].pop("feel good")
+        want["groups"].update({name: list(words) for name, words in PRE_FEEL_GOOD_GROUPS.items()
+                               if name in want["groups"]})
+    if isinstance(want.get("group_factors"), dict):
+        want["group_factors"].pop("feel good", None)
+    everyday = front_page.get("everyday_price")
+    if isinstance(everyday, dict):
+        everyday.update({k: v for k, v in PRE_FEEL_GOOD_EVERYDAY.items() if k in everyday})
+
+
+def pre_feel_good(cfg):
+    """Before the 2026-10-23 feel-good lean; never re-pin recorded bytes."""
+    _pre_feel_good(cfg.front_page)
+    return cfg
+
+
+def pre_feel_good_raw(config):
+    _pre_feel_good(config.get("publish", {}).get("front_page"))
     return config
 
 

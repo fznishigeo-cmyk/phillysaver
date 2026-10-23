@@ -73,9 +73,10 @@ def test_shipped_switches_and_model_default(tmp_path):
         "enabled": True, "shadow": True, "min_monthly_sold": 1000, "max_price": 50,
         "pct_over_floor": 10, "max_age_h": 72, "weight": 1.25, "max_share": .25}
     assert not cfg.keepa_popular_affordable_page
-    # Operator 2026-10-17: "$200 items at the top, nobody will buy that" -> on.
+    # Operator 2026-10-17: "$200 items at the top, nobody will buy that" -> on;
+    # 2026-10-23: "not very pricey stuff" -> full until $30, floor from $75.
     assert cfg.front_page["everyday_price"] == {
-        "enabled": True, "full_until": 40, "floor_from": 100, "floor_factor": .55}
+        "enabled": True, "full_until": 30, "floor_from": 75, "floor_factor": .45}
     assert not AppConfig().front_page.get("everyday_price", {}).get("enabled")
     assert not AppConfig().front_page.get("popular_affordable", {}).get("enabled")
     assert not AppConfig().keepa_popular_affordable_page

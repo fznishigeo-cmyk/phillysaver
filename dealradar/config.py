@@ -1365,6 +1365,10 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         raise ValueError("publish.front_page.used_tab_only must be a boolean")
     from .appeal import validate as validate_appeal
     validate_appeal(cfg.front_page.get("appeal", {}))
+    if "mix" in cfg.front_page:
+        from .front_mix import validate as validate_mix
+        validate_mix(cfg.front_page["mix"],
+                     ((cfg.front_page.get("appeal") or {}).get("want") or {}).get("groups", {}))
     cfg.pinterest = g("social", "pinterest", default={}) or {}
     cfg.meta = g("social", "meta", default={}) or {}
     cfg.social_profiles = social_profiles(g("social", "profiles", default={}) or {})

@@ -27,7 +27,7 @@ from ..verify import (confirmation_coverage, is_amazon_deal, price_confirmed_at,
                        price_confirmation_recent, price_unconfirmed)
 from ..source_policy import source_image_allowed
 from ..util import iso, parse_iso
-from .. import amazon_reference, checkout_prices, popular_affordable
+from .. import amazon_reference, checkout_prices, front_mix, popular_affordable
 from . import ai_take, amazon_as_of, amazon_history, checker, checker_page, click_signal, compare_pages, dark, drop_rotation, indexnow, inventory, manifest_refresh, price_labels, product_pages, profiles, pwa, seo, seo_audit, traffic
 from .paywall import is_open, split_teaser, teaser_memory
 from .credits import _deal_source_hosts, _display_names
@@ -704,6 +704,8 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
     from . import open_box
     if title_appeal.is_allure(deal, getattr(cfg, "front_page", {}).get("appeal") or {}):
         public["allure"] = True
+    if mix := front_mix.bucket(deal, getattr(cfg, "front_page", {})):
+        public["mx"] = mix
     if getattr(cfg, "open_box_scarcity", False) and (stock := open_box.facts(deal, now)) is not None:
         public["open_box_scarcity"] = True
         if stock and getattr(cfg, "open_box_counts", False):
@@ -1202,6 +1204,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     site_version = search_focus_ring.site_version(site_version, cfg)
     site_version = hide_timer_ticker.site_version(site_version, cfg)
     site_version = sticky_buy_bar.site_version(site_version, cfg)
+    site_version = front_mix.site_version(site_version, cfg)
     if cfg.brand_pages:
         site_version = hashlib.sha256((site_version + "brand-pages").encode()).hexdigest()[:12]
     if cfg.open_box_scarcity or (cfg.front_page.get("appeal", {}).get("want") or {}).get("enabled"):
@@ -1257,7 +1260,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         **({"saved_deals_limit": saved_limit} if saved_deals else {}),
         # Ranking boosts are applied in Python; omit their knobs so disabling restores
         # the previous payload bytes as well as the previous scores/order.
-        "front_page": {k: v for k, v in cfg.front_page.items() if k not in {"appeal", "popular_affordable", "everyday_price", "demote_words"}
+        "front_page": {k: v for k, v in cfg.front_page.items() if k not in {"appeal", "popular_affordable", "everyday_price", "demote_words", "mix"}
                        and (k != "fresh_page_size" or drop_fresh.enabled(cfg))
                        and (k != "used_tab_only" or v)
                        and (k != "checkout_price_deals" or checkout_prices.enabled(cfg))},
@@ -1477,6 +1480,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     search_analyze_lazy.publish(out, cfg)
     drop_fresh.publish(out, cfg)
     fresh_more_plain.publish(out, cfg)
+    front_mix.publish(out, cfg)
     header_polish.publish(out, cfg)
     card_tidy.publish(out, cfg)
     all_discounts.publish(out, cfg)
