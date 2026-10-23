@@ -319,6 +319,18 @@ async function main() {
       }
     }
   }
+  // A34/C16 (Codex review 2026-10-23 #6): with price_shipping_note, the Deal Spotter's shipping
+  // note right under the price; without it, the previous markup.
+  const shippingNote = moduleSource.includes('d.price_includes_shipping === true');
+  for (const [extra, shown] of [[{shipping_cents:2515}, '<p class="headline">+ $25.15 shipping</p>'],
+    [{price_includes_shipping:true}, '<p class="headline">incl. shipping</p>'], [{shipping_cents:0}, ''], [{}, '']]) {
+    const p = setup(); await p.query('kettle'); await p.advance(600);
+    await p.respond(p.calls[0], {items:[p.item(600, 'Steel kettle', {list_price_cents:1999, ...extra})]});
+    const markup = p.elements['amazon-results'].innerHTML, note = shippingNote ? shown : '';
+    assert.equal(/shipping/.test(markup), Boolean(note), JSON.stringify(extra));
+    assert(markup.includes('$12.99</span> <s><span class="sr-only">List Price </span>$19.99</s></p>' + note +
+      '<p class="headline">Amazon price as of '), JSON.stringify(extra));
+  }
 
   const spelling = setup(); spelling.ctx.state.deals = [deal(1, 'Hair tie organizer'), deal(2, 'Steel kettle'),
     deal(3, 'Tire for a bike'), deal(4, 'Dead qwertyu', {status:'dead'}), deal(5, 'Private zxcvbn', {locked:true})];
@@ -437,6 +449,7 @@ async function main() {
     assert.equal(adopt.calls.length, 2, 'Analyze adopts the pending corrected request');
   }
   console.log('Search more logic passed: lazy pages 0..2, empty reasons, later cards, guards, dedupe, tagged button, spelling, List Price and Analyze');
+  console.log('shipping note: ' + (shippingNote ? 'on' : 'off'));
 }
 module.exports = {setup, deal, turn};
 if (require.main === module) main().catch(error => {console.error(error); process.exitCode = 1;});
