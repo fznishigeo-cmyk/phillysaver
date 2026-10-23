@@ -1,6 +1,8 @@
 """Offline: the one-time builder only ever creates a PAUSED campaign (MockTransport)."""
 import json
 import logging
+import os
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -33,8 +35,8 @@ def secrets(monkeypatch):
 
 
 class API:
-    def __init__(self, existing=(), reject=False, groups=()):
-        self.existing, self.reject, self.groups = list(existing), reject, list(groups)
+    def __init__(self, existing=(), reject=False, groups=(), ads=()):
+        self.existing, self.reject, self.groups, self.ads = list(existing), reject, list(groups), list(ads)
         self.requests, self.mutates = [], []
 
     def __call__(self, request):
@@ -62,6 +64,10 @@ class API:
             rows = [{"billingSetup": {"status": "APPROVED"}}]
         elif "FROM recommendation_subscription" in query:
             rows = []
+        elif "responsive_search_ad.headlines" in query:
+            assert f"campaign.name = '{SHIPPED['campaign_name']}'" in query
+            assert "ad_group_ad.ad.type = 'RESPONSIVE_SEARCH_AD'" in query and "ad_group_ad.status != 'REMOVED'" in query
+            rows = self.ads
         elif "FROM ad_group_ad" in query:
             assert f"campaign.name = '{SHIPPED['campaign_name']}'" in query
             rows = [{"adGroup": {"name": n, "status": "ENABLED"},
@@ -84,6 +90,10 @@ class API:
     def setup(self, cfg=None, **kw):
         with httpx.Client(transport=httpx.MockTransport(self)) as client:
             return ads_setup.setup(cfg or config(), NOW, client, **kw)
+
+    def update(self, cfg=None, **kw):
+        with httpx.Client(transport=httpx.MockTransport(self)) as client:
+            return ads_setup.update(cfg or config(), NOW, client, **kw)
 
 
 def creates(body):
@@ -122,7 +132,7 @@ def test_creates_one_paused_campaign_after_google_validates_it(caplog):
     assert len({g["resourceName"] for g in groups}) == 3
     ad = next(c for k, c in ops if k == "adGroupAdOperation")["ad"]
     assert ad["finalUrls"] == ["https://wowpriced.com/amazon-deal-checker/"]
-    assert len(ad["responsiveSearchAd"]["headlines"]) == 8
+    assert len(ad["responsiveSearchAd"]["headlines"]) == 15 and len(ad["responsiveSearchAd"]["descriptions"]) == 4
     assert "created PAUSED campaign" in caplog.text and "billing: APPROVED" in caplog.text
     assert "auto-apply on: none" in caplog.text
 
@@ -199,7 +209,22 @@ GROUP = SHIPPED["ad_groups"][0]
                                          ("ad_groups", [GROUP, GROUP]), ("ad_groups", [{**GROUP, "name": "x'y"}]),
                                          ("ad_groups", [{**GROUP, "final_url": "http://wowpriced.com/"}]),
                                          ("ad_groups", [{**GROUP, "headlines": ["x" * 31, "a", "b"]}]),
-                                         ("ad_groups", [GROUP] * 6)])
+                                         ("ad_groups", [GROUP] * 6),
+                                         # Operator 2026-10-23: a full ad, exactly 15 headlines and 4 descriptions.
+                                         ("headlines", SHIPPED["headlines"][:14]),
+                                         ("headlines", [*SHIPPED["headlines"], "Another Free Checker"]),
+                                         ("headlines", [*SHIPPED["headlines"][:14], SHIPPED["headlines"][0].lower()]),
+                                         ("descriptions", SHIPPED["descriptions"][:3]),
+                                         ("descriptions", [*SHIPPED["descriptions"][:3], "x" * 91]),
+                                         ("ad_groups", [{**GROUP, "descriptions": GROUP["descriptions"][:3]}]),
+                                         ("ad_groups", [{**GROUP, "headlines": ["Amazon Deal Grader", *GROUP["headlines"][1:]]}]),
+                                         *(("headlines", [bad, *SHIPPED["headlines"][1:]]) for bad in (
+                                             "Amazon Deal Checker", "Amzn Price Checker", "Amazn Deals Today", "Kindle Deals",
+                                             "Prime Day Price Checker", "Alexa Deal Finder", "Fakespot Alternative",
+                                             "Review Meta Alternative", "Walmart Price Checker", "Best Deal Checker",
+                                             "Save 50% Today", "Deals From $5", "#1 Deal Checker", "Used by 10,000 Shoppers",
+                                             "FREE Deal Checker", "Great Deals!", "Great Deals...", "Guaranteed Savings")),
+                                         ("descriptions", [*SHIPPED["descriptions"][:3], "Check any Kindle price free."])])
 def test_plan_rejects_what_google_would(field, value):
     with pytest.raises(ValueError):
         ads_setup.plan(config(**{field: value}), NOW)
@@ -215,12 +240,20 @@ def test_shipped_plan_and_workflow_and_cli(monkeypatch):
     assert doc[True]["workflow_dispatch"]["inputs"]["validate_only"]["default"] is True
     assert doc["permissions"] == {"contents": "read"}
     step = doc["jobs"]["setup"]["steps"][-1]
+    assert doc[True]["workflow_dispatch"]["inputs"]["update_ads"]["default"] is False
     assert set(step["env"]) == {"GOOGLE_ADS_CLIENT_ID", "GOOGLE_ADS_CLIENT_SECRET",
-                                "GOOGLE_ADS_REFRESH_TOKEN", "VALIDATE_ONLY"}
+                                "GOOGLE_ADS_REFRESH_TOKEN", "VALIDATE_ONLY", "UPDATE_ADS"}
+    # Anything but an explicit "false" stays a dry run; only an explicit "true" updates ads.
+    for validate, update, flags in (("true", "false", " --validate-only"), ("false", "false", ""), ("", "", " --validate-only"),
+                                    ("true", "true", " --validate-only --update-ads"), ("false", "true", " --update-ads")):
+        out = subprocess.run(["bash", "-ec", 'python() { echo "$*"; }\n' + step["run"]], capture_output=True, text=True,
+                             check=True, env={"PATH": os.environ["PATH"], "VALIDATE_ONLY": validate, "UPDATE_ADS": update})
+        assert out.stdout == f"-m dealradar ads-setup{flags}\n"
     called = []
     monkeypatch.setattr(ads_setup, "run", lambda cfg, **kw: called.append(kw) or 0)
     assert cli.main(["ads-setup", "--validate-only"]) == 0
-    assert called == [{"validate_only": True}]
+    assert cli.main(["ads-setup", "--update-ads"]) == 0
+    assert called == [{"validate_only": True, "update_ads": False}, {"validate_only": False, "update_ads": True}]
 
 
 def test_ad_quality_report_never_fails_the_check(caplog):
@@ -234,3 +267,123 @@ def test_ad_quality_report_never_fails_the_check(caplog):
     with caplog.at_level(logging.INFO), httpx.Client(transport=httpx.MockTransport(broken)) as client:
         assert ads_setup.setup(config(), NOW, client) == 0
     assert "ad quality: unavailable" in caplog.text and api.mutates == []
+
+
+NAMES = ["wowpriced search - deal tools ad group", "deal spotter", "review checker"]
+COPY = dict(zip(NAMES, [SHIPPED, *SHIPPED["ad_groups"]]))
+RSA_TEXT = "responsiveSearchAd.headlines,responsiveSearchAd.descriptions"
+
+
+def test_shipped_copy_fills_every_ad_and_follows_the_ad_rules():
+    # Operator 2026-10-23 ("WHY NOT A+"): 15 headlines, 4 descriptions, keywords in headlines.
+    assert ads_setup.plan(config(), NOW)
+    assert [g["name"] for g in SHIPPED["ad_groups"]] == NAMES[1:]
+    urls = [g["final_url"] for g in COPY.values()]
+    assert urls == ["https://wowpriced.com/amazon-deal-checker/", "https://wowpriced.com/deal-spotter/",
+                    "https://wowpriced.com/review-checker/"]  # landing pages unchanged
+    for name, g in COPY.items():
+        heads, descs = g["headlines"], g["descriptions"]
+        assert len(heads) == 15 and all(len(t) <= 30 for t in heads), name
+        assert len(descs) == 4 and all(len(t) <= 90 for t in descs), name
+        assert len({t.lower() for t in heads}) == 15 and len({t.lower() for t in descs}) == 4, name
+        text = " ".join(heads + descs)
+        for banned in ("amazon", "amzn", "kindle", "prime", "alexa", "fakespot", "reviewmeta", "review meta",
+                       "walmart", "best", "#", "%", "$", "!", "guarantee"):
+            assert banned not in text.lower(), (name, banned)
+        assert not any(c.isdigit() for c in text), name
+        assert sum(any(k in t.lower() for k in g["keywords"]) for t in heads) >= 3, name
+
+
+def rsa(name, ad_id, status="ENABLED", live=False):
+    """One responsive search ad row as Google returns it; old copy unless live."""
+    g = COPY[name]
+    texts = g if live else {"headlines": g["headlines"][:8], "descriptions": g["descriptions"][:2]}
+    return {"adGroup": {"name": name, "status": status},
+            "adGroupAd": {"status": status, "adStrength": "POOR", "ad": {
+                "resourceName": f"customers/{CID}/ads/{ad_id}",
+                "responsiveSearchAd": {k: [{"text": t, "assetPerformanceLabel": "PENDING"} for t in texts[k]]
+                                       for k in ("headlines", "descriptions")}}}}
+
+
+def swaps(body):
+    """{ad resource: (headlines, descriptions)}; fails on any other operation or field."""
+    out = {}
+    for item in body["mutateOperations"]:
+        assert set(item) == {"adOperation"}
+        op = item["adOperation"]
+        assert set(op) == {"updateMask", "update"} and op["updateMask"] == RSA_TEXT
+        assert set(op["update"]) == {"resourceName", "responsiveSearchAd"}
+        ad = op["update"]["responsiveSearchAd"]
+        assert set(ad) == {"headlines", "descriptions"}
+        assert all(set(t) == {"text"} for t in ad["headlines"] + ad["descriptions"])  # nothing pinned
+        out[op["update"]["resourceName"]] = ([t["text"] for t in ad["headlines"]], [t["text"] for t in ad["descriptions"]])
+    return out
+
+
+def three_ads():
+    return [rsa(NAMES[0], 11), rsa(NAMES[1], 22, status="PAUSED"), rsa(NAMES[2], 33)]
+
+
+@pytest.mark.parametrize("validate_only", [True, False])
+def test_update_ads_swaps_only_the_ad_text_after_google_validates(validate_only, caplog):
+    api = API(existing=["ENABLED"], groups=NAMES, ads=three_ads())
+    with caplog.at_level(logging.INFO):
+        assert api.update(validate_only=validate_only) == 0
+    assert [m.get("validateOnly") for m in api.mutates] == ([True] if validate_only else [True, None])
+    if not validate_only:
+        check, real = api.mutates
+        assert {k: v for k, v in check.items() if k != "validateOnly"} == real
+    assert swaps(api.mutates[0]) == {
+        f"customers/{CID}/ads/{i}": (COPY[n]["headlines"], COPY[n]["descriptions"]) for i, n in zip((11, 22, 33), NAMES)}
+    # No status (nothing paused gets enabled), URL, keyword, bid, budget or campaign is written.
+    sent = json.dumps(api.mutates)
+    for field in ("status", "finalUrls", "keyword", "campaign", "Budget", "cpc", "adGroup"):
+        assert field not in sent
+    assert {r.url.path.rsplit("/", 1)[-1] for r in api.requests if r.url.host == "googleads.googleapis.com"} == {
+        "googleAds:search", "googleAds:mutate"}
+    assert "ad in deal spotter (group PAUSED, ad PAUSED): strength POOR, 8 headlines, 2 descriptions" in caplog.text
+    assert ("validated (not updated)" if validate_only else "updated") + " 3 ad(s) to 15 headlines" in caplog.text
+    # Names, counts, statuses and strength only: no ids, resource names or credentials
+    # (run() silences httpx, whose request lines carry the account number).
+    ours = " ".join(r.getMessage() for r in caplog.records if r.name == ads_setup.log.name)
+    for secret in (CID, "/ads/", "FAKE_", "Bearer"):
+        assert secret not in ours
+
+
+@pytest.mark.parametrize("live,changed", [((True, True, True), []), ((True, False, True), [22])])
+def test_update_ads_skips_ads_already_showing_the_copy(live, changed, caplog):
+    # Idempotent: a re-run after the update writes nothing (and sends no ad back to review).
+    ads = [rsa(n, i, live=x) for n, i, x in zip(NAMES, (11, 22, 33), live)]
+    api = API(existing=["ENABLED"], groups=NAMES, ads=ads)
+    with caplog.at_level(logging.INFO):
+        assert api.update() == 0
+    assert [list(swaps(m)) for m in api.mutates] == ([[f"customers/{CID}/ads/{i}" for i in changed]] * 2 if changed else [])
+    assert ("already show the config copy" in caplog.text) == (not changed)
+
+
+@pytest.mark.parametrize("ads", [[], three_ads()[:2], [*three_ads(), rsa(NAMES[1], 44)]])
+def test_update_ads_needs_exactly_one_ad_per_group(ads, caplog):
+    api = API(existing=["ENABLED"], groups=NAMES, ads=ads)
+    assert api.update() == 1
+    assert api.mutates == [] and "need exactly one responsive search ad in" in caplog.text
+    assert "nothing updated" in caplog.text
+
+
+def test_update_ads_rejection_or_unplannable_copy_changes_nothing(caplog):
+    api = API(existing=["ENABLED"], groups=NAMES, ads=three_ads(), reject=True)
+    assert api.update() == 1
+    assert [m.get("validateOnly") for m in api.mutates] == [True]
+    assert "TRADEMARKS_IN_AD_TEXT" in caplog.text and "failed, nothing updated" in caplog.text
+    api = API(existing=["ENABLED"], groups=NAMES, ads=three_ads())
+    assert api.update(config(headlines=SHIPPED["headlines"][:8])) == 1
+    assert api.requests == []
+
+
+def test_run_routes_update_ads_to_the_update_path(monkeypatch):
+    calls = []
+    for name in ("setup", "update"):
+        monkeypatch.setattr(ads_setup, name, lambda cfg, now, client, name=name, **kw: calls.append((name, kw)) or 0)
+    with httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(500))) as client:
+        assert ads_setup.run(config(), http_client=client, update_ads=True, validate_only=True) == 0
+        assert ads_setup.run(config(), http_client=client) == 0
+    assert calls == [("update", {"validate_only": True}), ("setup", {"validate_only": False})]

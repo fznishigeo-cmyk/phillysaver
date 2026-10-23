@@ -3,7 +3,8 @@
 The operator enables it in Google Ads. Nothing here enables a campaign,
 changes an existing one, or raises a budget; the guard keeps watching it.
 The only addition to an existing campaign is a missing ads.setup.ad_groups
-entry, created PAUSED inside the same campaign and budget.
+entry, created PAUSED inside the same campaign and budget. The only change
+(update_ads) swaps each ad group's ad headlines/descriptions for the config copy.
 Settings live in config.yaml ads.setup. See docs/ads-guard.md.
 """
 from __future__ import annotations
@@ -21,6 +22,12 @@ from . import ads_guard, google_ads
 log = logging.getLogger(__name__)
 MUTATE = "https://googleads.googleapis.com/{}/customers/{}/googleAds:mutate"
 US, ENGLISH = "geoTargetConstants/2840", "languageConstants/1000"
+# Ad text (operator 2026-10-23): no Amazon mark or misspelling (Associates), no other
+# brand, superlative, price, number, "!" or shouting (Google editorial policy).
+BANNED = re.compile(r"amaz|amzn|kindle|alexa|prime|audible|fake ?spot|review ?meta|camel|keepa|"
+                    r"walmart|target|best|ebay|costco|woot|guarantee|number one", re.I)
+SHOUTING = re.compile(r"[0-9$%#!*]|[A-Z]{2}|[?.,:]{2}")
+RSA_TEXT = "responsiveSearchAd.headlines,responsiveSearchAd.descriptions"  # the only fields update_ads writes
 
 
 def plan(cfg, now) -> dict:
@@ -64,7 +71,7 @@ def plan(cfg, now) -> dict:
 def _texts(raw, keys) -> dict:
     out = {}
     for key, low, limit in (("keywords", 1, 80), ("negative_keywords", 0, 80),
-                            ("headlines", 3, 30), ("descriptions", 2, 90)):
+                            ("headlines", 15, 30), ("descriptions", 4, 90)):
         if key not in keys:
             continue
         items = [str(t) for t in raw.get(key) or []]
@@ -74,8 +81,15 @@ def _texts(raw, keys) -> dict:
     # Amazon Associates bans bidding on Amazon terms (paid-search policy).
     if any("amazon" in t.lower() for t in out.get("keywords", [])):
         raise ValueError("keywords: no keyword may contain amazon")
-    if len(out["headlines"]) > 15 or len(out["descriptions"]) > 4:
-        raise ValueError("at most 15 headlines and 4 descriptions")
+    # Google's full responsive search ad (best ad strength): 15 headlines, 4 descriptions.
+    if len(out["headlines"]) != 15 or len(out["descriptions"]) != 4:
+        raise ValueError("need exactly 15 headlines and 4 descriptions")
+    for key in ("headlines", "descriptions"):
+        if len({t.lower() for t in out[key]}) < len(out[key]):
+            raise ValueError(f"{key}: each must be different")
+        bad = next((t for t in out[key] if BANNED.search(t) or SHOUTING.search(t)), None)
+        if bad:
+            raise ValueError(f"{key}: not allowed in ad text: {bad}")
     return out
 
 
@@ -243,13 +257,73 @@ def setup(cfg, now, client, *, validate_only=False) -> int:
     return 0
 
 
-def run(cfg, *, now=None, http_client=None, validate_only=False) -> int:
+def update(cfg, now, client, *, validate_only=False) -> int:
+    """Swap each configured ad group's one responsive search ad text for the config copy
+    (operator 2026-10-23). An in-place AdService update masked to headlines and
+    descriptions: no status, URL, keyword, bid, budget or campaign is written. Google
+    validates first; an ad already showing the copy gets no write, so a re-run is a no-op."""
+    try:
+        p = plan(cfg, now)
+    except ValueError as exc:
+        log.error("ads_setup: %s; nothing updated", exc)
+        return 1
+    copy = {p["name"] + " ad group": p, **{g["name"]: g for g in p["ad_groups"]}}
+    try:
+        api = google_ads.GuardAPI(client, cfg)
+        ads = {}
+        for r in api.search(
+                "SELECT ad_group.name, ad_group.status, ad_group_ad.status, ad_group_ad.ad_strength, "
+                "ad_group_ad.ad.resource_name, ad_group_ad.ad.responsive_search_ad.headlines, "
+                "ad_group_ad.ad.responsive_search_ad.descriptions FROM ad_group_ad "
+                f"WHERE campaign.name = '{p['name']}' AND campaign.status != 'REMOVED' "
+                "AND ad_group.status != 'REMOVED' AND ad_group_ad.status != 'REMOVED' "
+                "AND ad_group_ad.ad.type = 'RESPONSIVE_SEARCH_AD'"):
+            ads.setdefault(r["adGroup"].get("name"), []).append(r)
+        unclear = [name for name in copy if len(ads.get(name, [])) != 1]
+        if unclear:
+            log.error("ads_setup: need exactly one responsive search ad in: %s; nothing updated",
+                      ", ".join(unclear))
+            return 1
+        ops, changed = [], []
+        for name, g in copy.items():
+            group, ad = ads[name][0]["adGroup"], ads[name][0]["adGroupAd"]
+            rsa = ad["ad"].get("responsiveSearchAd") or {}
+            have = [sorted(str(t.get("text")) for t in rsa.get(key) or []) for key in ("headlines", "descriptions")]
+            log.info("ads_setup: ad in %s (group %s, ad %s): strength %s, %d headlines, %d descriptions",
+                     name, group.get("status"), ad.get("status"), ad.get("adStrength", "UNSPECIFIED"),
+                     len(have[0]), len(have[1]))
+            if have == [sorted(g["headlines"]), sorted(g["descriptions"])]:
+                continue
+            changed.append(name)
+            ops.append({"adOperation": {"updateMask": RSA_TEXT, "update": {
+                "resourceName": ad["ad"]["resourceName"], "responsiveSearchAd": {
+                    "headlines": [{"text": t} for t in g["headlines"]],
+                    "descriptions": [{"text": t} for t in g["descriptions"]]}}}})
+        if ops:
+            url = MUTATE.format(api.version, api.customer)
+            _mutate(client, url, api.headers, {"mutateOperations": ops, "validateOnly": True}, "validate")
+            if not validate_only:
+                _mutate(client, url, api.headers, {"mutateOperations": ops}, "update")
+    except Exception as exc:
+        log.error("ads_setup: failed, nothing updated: %s", ads_guard._error(exc))
+        return 1
+    if not ops:
+        log.info("ads_setup: all %d ads already show the config copy; nothing updated", len(copy))
+    else:
+        log.info("ads_setup: %s %d ad(s) to 15 headlines and 4 descriptions: %s; statuses unchanged%s",
+                 "validated (not updated)" if validate_only else "updated", len(changed), ", ".join(changed),
+                 "" if validate_only else "; Google reviews the edited ads again")
+    _quality(api, p["name"])
+    return 0
+
+
+def run(cfg, *, now=None, http_client=None, validate_only=False, update_ads=False) -> int:
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     client = http_client or httpx.Client(timeout=30, follow_redirects=False)
     try:
-        return setup(cfg, now or now_utc(), ads_guard.PacedClient(client, cfg),
-                     validate_only=validate_only)
+        return (update if update_ads else setup)(cfg, now or now_utc(), ads_guard.PacedClient(client, cfg),
+                                                  validate_only=validate_only)
     finally:
         if http_client is None:
             client.close()

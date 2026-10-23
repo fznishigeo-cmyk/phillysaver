@@ -89,6 +89,16 @@ guard watches the campaign from then on. Its log names only billing setup and
 auto-apply recommendation status (enum names), so the operator knows whether
 a payment method or an auto-apply switch needs attention.
 
+Ad copy (operator 2026-10-23, "WHY NOT A+"): each ad needs exactly 15 unique
+headlines (at most 30 characters) and 4 unique descriptions (at most 90), with no
+Amazon mark or misspelling, other brand, price, number, "best", "!" or all-caps
+word; the builder refuses anything else. The `update_ads` input (`--update-ads`)
+changes only that copy in an existing campaign: for each configured ad group it
+finds the group's one responsive search ad and updates it in place (AdService,
+`updateMask` headlines and descriptions only), after Google validates the whole
+request; `validate_only` stops there. It never writes a status, URL, keyword,
+bid, budget or campaign, and an ad already showing the copy gets no write.
+
 ## Every guard run
 
 `python -m dealradar ads-guard` uses the existing OAuth secrets

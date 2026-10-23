@@ -1197,6 +1197,8 @@ ads:
   # ads-setup.yml). It creates the campaign PAUSED and never touches an
   # existing one; the operator enables it in Google Ads. The budget must be
   # at most half the authorized cap (Google may spend 2x a daily budget).
+  # update_ads (--update-ads) only swaps each ad group's responsive search ad
+  # headlines/descriptions for the copy below; nothing else changes.
   setup:
     # 2026-10-22 (operator): Search ad for the two free tools. The earlier "generic
     # deals" campaign (2026-10-15) stays paused as it is. No keyword may contain
@@ -1213,12 +1215,20 @@ ads:
     # Broad negatives: store names (most programs ban bidding on them) and junk intent.
     negative_keywords: [amazon, walmart, target, best buy, ebay, woot, costco, kohls, macys,
                         wayfair, coupon code, promo code, jobs, login, near me]
-    headlines: ["Is It Really a Good Deal?", "Free Online Deal Checker", "Check a Price in Seconds",
-                "Find Real Discounts Fast", "Free Discount Finder Tool", "Prices Re-Checked All Day",
-                "No Sign-Up Needed", "See Real Price Drops"]
+    # Operator 2026-10-23 ("WHY NOT A+"): Google rates an ad Excellent with 15
+    # headlines (<= 30 characters) and 4 descriptions (<= 90), unique, keywords in
+    # several headlines. Never Amazon or its marks, other brands, prices, numbers,
+    # "best" or "!" (ads_setup enforces it). Plain words that match the landing page.
+    headlines: ["Is This a Good Deal?", "Free Online Deal Checker", "Simple Price Checker Tool",
+                "Free Discount Finder Tool", "Find Real Discounts Fast", "See Real Price Drops",
+                "Check a Price in Seconds", "Know Before You Buy", "Prices Re-Checked All Day",
+                "No Sign-Up or Extension", "Paste a Link, See the Verdict", "Compare With the List Price",
+                "Shop With More Confidence", "Works on Phone and Computer", "Deal Checker by wowpriced"]
     descriptions:
       - "Paste a product link and see if today's price is really a deal. Free, no sign-up."
-      - "Find real price drops on thousands of products. Checked all day, free to use."
+      - "Find real price drops on everyday products. Prices re-checked all day, free to use."
+      - "We compare today's price with the list price and our verified deals in seconds."
+      - "Works on your phone or computer. No extension to install. Shop with more confidence."
     # 2026-10-22 (operator: "used key words like fakespot, reviewmeta, price checker,
     # review checker etc?"): one ad group per new tool, added PAUSED to the SAME
     # campaign and budget (no new money); the operator enables them. Brand names
@@ -1229,22 +1239,30 @@ ads:
         final_url: "https://wowpriced.com/deal-spotter/"
         keywords: ["fakespot", "fake spot", "fakespot alternative", "deal grader",
                    "fake discount checker", "is this discount real", "deal spotter"]
-        headlines: ["Spot Great Deals Fast", "Free Deal Grader: A, B or C", "Is It a Great Price?",
-                    "Paste a Link, Get a Grade", "Free. No Extension Needed", "Deal Spotter by wowpriced",
-                    "Check a Price in Seconds", "No Sign-Up Needed"]
+        headlines: ["Deal Spotter by wowpriced", "Try the Free Deal Spotter", "Free Deal Grader: A, B or C",
+                    "Spot Great Deals Fast", "Is It a Great Price?", "Is This Discount Worth It?",
+                    "Great, Good or Fair Price?", "Paste a Link, Get a Grade", "Check a Price in Seconds",
+                    "Grade a Deal Before You Buy", "Free. No Extension Needed", "No Sign-Up Needed",
+                    "Works on Phone and Computer", "See Today's Verified Deals", "Buy With More Confidence"]
         descriptions:
           - "Paste a product link and get an A, B or C grade for the price in seconds. Free."
           - "See if today's price is a great deal before you buy. Free, no extension needed."
+          - "The grade weighs today's price, not just the list price. Works on phone or computer."
+          - "Spot great deals in seconds and shop with more confidence. No sign-up needed."
       - name: "review checker"
         final_url: "https://wowpriced.com/review-checker/"
         keywords: ["review checker", "reviewmeta", "review meta", "reviewmeta alternative",
                    "product review checker", "review grader", "check product reviews"]
-        headlines: ["Free Review Checker", "Review Signals at a Glance", "A, B or C Review Grade",
-                    "Paste a Link, Get a Grade", "Free. No Sign-Up Needed", "Review Checker by wowpriced",
-                    "Shop With More Confidence", "Works on Any Device"]
+        headlines: ["Free Review Checker", "Review Checker by wowpriced", "Product Review Checker",
+                    "Check Product Reviews Fast", "Free Review Grader Tool", "A, B or C Review Grade",
+                    "Review Signals at a Glance", "Paste a Link, Get a Grade", "Is the Rating Holding Steady?",
+                    "Check Reviews Before You Buy", "Plain Answers, Clear Grade", "Free. No Sign-Up Needed",
+                    "No Extension Needed", "Works on Any Device", "Shop With More Confidence"]
         descriptions:
           - "Paste a product link and see its review signals with a simple A, B or C grade. Free."
           - "See rating steadiness, review pace and popularity in seconds. No extension needed."
+          - "Check product reviews before you buy: a clear grade with the checks the product passed."
+          - "Free on your phone or computer, with no sign-up. Shop with a little more confidence."
 
 growth:
   # The daily PRIVATE growth report (python -m dealradar growth-report,
