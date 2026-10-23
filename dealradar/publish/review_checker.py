@@ -7,7 +7,7 @@ from html import escape
 from pathlib import Path
 
 from ..config import validated_review_checker
-from . import amazon_as_of, deal_spotter, search_boost, seo, shipping_note, tool_pages, tools_merge, tracking
+from . import amazon_as_of, deal_spotter, search_boost, seo, shipping_note, tool_pages, tools_merge, tracking, words_analyzer
 
 TEMPLATES = Path(__file__).with_name("templates")
 PATHS = ("/review-checker/", "/reviewmeta-alternative/")
@@ -68,6 +68,7 @@ def script(cfg):
               + shared + '\n' + '\n'.join([deal_spotter.EXCLUDE, *names, (TEMPLATES / "tool-name-panel.js").read_text()])
               + (TEMPLATES / "review-checker.js").read_text())
     script = tools_merge.review_script(script, source) if tools_merge.enabled(cfg) else script
+    script = words_analyzer.review_script(script, cfg)
     return shipping_note.review_script(script, cfg)
 
 

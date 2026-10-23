@@ -20,7 +20,10 @@ function fakePage(fault = '') {
     goto:async next => { url = next; visits.push(next); return {status:() => 200}; },
     waitForFunction:async (fn, query) => assert.equal(query, '?q=cupping%20set'),
     locator:selector => selector === '#q' ? {fill:async value => fills.push(value), inputValue:async () => 'cupping set'} :
-      {getAttribute:async name => (attrs[selector] || {})[name] ?? null, waitFor:async options => assert.equal(options.state, 'visible')}};
+      {getAttribute:async name => (attrs[selector] || {})[name] ?? null, waitFor:async options => {
+        assert.equal(options.state, 'visible');
+        assert(options.timeout >= 35000, 'typed words wait out the 25 s analyzer (tool_words_analyzer)');
+      }}};
 }
 (async () => {
   const run = vm.runInNewContext(code + '\ncheckMergedTools', {SITE, SITE_URL:new URL(SITE), URL, Date, check, checkToolAmazonUrl});

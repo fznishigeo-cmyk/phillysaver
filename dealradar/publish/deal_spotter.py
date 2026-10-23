@@ -12,7 +12,7 @@ from urllib.parse import urlsplit
 from ..config import social_profiles
 from ..savings import tool_meter
 from ..util import parse_iso
-from . import add_to_cart, amazon_as_of, seo, tool_pages, tools_merge, tracking
+from . import add_to_cart, amazon_as_of, seo, tool_pages, tools_merge, tracking, words_analyzer
 
 TEMPLATES = Path(__file__).with_name("templates")
 SLUGS = ("deal-spotter", "fakespot-alternative")
@@ -90,6 +90,7 @@ def script(cfg):
                         (TEMPLATES / "deal-spotter.js").read_text()])
     if tools_merge.enabled(cfg):
         result = tools_merge.spotter_script(result, cfg, source)
+        result = words_analyzer.spotter_script(result, cfg)
     return add_to_cart.spotter_script(result, cfg)
 
 
@@ -325,7 +326,7 @@ def publish(out, cfg, now, site_url, disclosure):
             INSTALL_HELP=(TEMPLATES / 'pwa-install-help.html').read_text() if cfg.pwa_enabled else '',
             **(tools_merge.spotter_tokens(rows, reviews_on(cfg)) if merged else {}))
         if slug == 'deal-spotter' or page:
-            html = add_to_cart.spotter_page(html, cfg)
+            html = words_analyzer.landing_page(add_to_cart.spotter_page(html, cfg), cfg)
         seo._write_page(out, '/' + slug + '/', tracking.inject(html, tracking.head_snippet(cfg)))
     discovery(out, cfg)
     return ['/' + slug + '/' for slug in SLUGS]

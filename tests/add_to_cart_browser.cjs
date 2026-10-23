@@ -125,6 +125,7 @@ async function box(page, selector) {
           // Fake Deal Spotter: a typed name never shows it; a graded link does.
           await page.goto('https://wowpriced.test/deal-spotter/');
           await page.locator('#q').fill('wireless headphones'); await page.locator('.hero-box button').click();
+          await page.clock.runFor(10100);  // tool_words_analyzer: the link's wait first
           assert(await page.locator('#name-results').isVisible());
           assert.equal(await page.locator('a[href*="/gp/aws/cart/add.html"]:visible').count(), 0, label + ' typed name');
           await page.locator('#q').fill(`https://www.amazon.com/dp/${VARIANT}`);

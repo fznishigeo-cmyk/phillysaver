@@ -137,9 +137,14 @@ async function contrastAudit(page, scope) {
         await page.locator('.merged-footer').scrollIntoViewIfNeeded(); await contrastAudit(page, '.merged-footer'); await noScroll();
         assert(!/as mentioned|as seen on|million|testimonial|add to chrome|AI-powered|proprietary|★/i.test(await page.locator('body').innerText()));
 
-        // Typed words: one box, no lookup; its Amazon links are deal_clicks.
+        // Typed words: the link's analyzer and wait (tool_words_analyzer), then one box, no lookup;
+        // its Amazon links are deal_clicks.
         await page.evaluate(() => scrollTo(0, 0));
         await page.locator('#q').fill('running shoes'); await page.locator('.hero-box button').click();
+        assert(await page.locator('#analyze-modal').isVisible()); assert(await page.locator('#name-results').isHidden());
+        assert.equal(await page.locator('#modal-product').textContent(), 'running shoes');
+        assert.equal(await page.locator('#modal-step').textContent(), 'Searching our verified deals..');
+        await page.clock.runFor(10100); assert(await page.locator('#analyze-modal').isHidden());
         const discounts = page.locator('#name-results .words-discounts');
         assert.match(await discounts.getAttribute('href'), /^https:\/\/www\.amazon\.com\/s\?k=running%20shoes&rh=p_n_deal_type%3A210906366011(?:%2Cp_36%3A-\d+)?&tag=wowpriced-20$/);
         assert.equal((await discounts.innerText()).trim(), 'See running shoes discounts on Amazon →');
@@ -152,6 +157,7 @@ async function contrastAudit(page, scope) {
         await contrastAudit(page, '#name-results'); await noScroll(); await shot('words');
         // Enter instead of the button, then time for any debounce, retry or late handler: still no lookup.
         await page.locator('#q').fill('air fryer'); await page.locator('#q').press('Enter');
+        assert(await page.locator('#analyze-modal').isVisible()); await page.clock.runFor(10100);
         assert.match(await discounts.getAttribute('href'), /k=air%20fryer&rh=p_n_deal_type%3A210906366011/);
         await page.clock.runFor(3000);
         assert.deepEqual(calls, [], 'typed words must not call /api/search, even later');
@@ -161,6 +167,7 @@ async function contrastAudit(page, scope) {
         await Promise.all([page.waitForResponse(r => r.url().includes('/api/search')), page.locator('.hero-box button').click()]);
         await page.clock.runFor(3000);
         assert(await page.locator('#analyze-modal').isVisible());
+        assert.equal(await page.locator('#modal-status').textContent(), 'Analyzing the price, please wait..');
         assert.equal(await page.locator('.rec-card').count(), 3);
         assert.match(await page.locator('.recommends').innerText(), /wowpriced recommends/);
         await shot('loading');
@@ -212,6 +219,7 @@ async function contrastAudit(page, scope) {
         await page.goto('https://wowpriced.test/amazon-discount-finder/?q=air%20fryer'); await page.clock.runFor(500);
         assert.equal(await page.locator('#start h1').textContent(), 'Amazon Discount Finder');
         assert.equal(await page.locator('#q').inputValue(), 'air fryer');
+        assert(await page.locator('#analyze-modal').isVisible()); await page.clock.runFor(10000);
         assert.match(await page.locator('#name-results .words-discounts').getAttribute('href'), /k=air%20fryer&rh=p_n_deal_type%3A210906366011/);
         assert.equal(calls.length, 0); await noScroll(); await shot('finder');
         await Promise.all([page.waitForResponse(r => r.url().includes('/api/search')), page.goto('https://wowpriced.test/amazon-deal-checker/?asin=' + ASIN)]);
@@ -225,6 +233,7 @@ async function contrastAudit(page, scope) {
         assert(!/Deal Checker|Discount Finder/.test(await page.locator('header').innerText()));
         calls.length = 0;
         await page.locator('#hero-input').fill('air fryer'); await page.locator('#hero-form button').click();
+        assert(await page.locator('#review-loading').isVisible()); await page.clock.runFor(10100);
         assert.match(await page.locator('#name-results .words-discounts').getAttribute('href'), /k=air%20fryer&rh=p_n_deal_type%3A210906366011/);
         assert.equal(calls.length, 0); await contrastAudit(page, '#name-results'); await noScroll(); await shot('review-words');
         await page.goto('https://wowpriced.test/review-checker/?asin=' + ASIN); await page.clock.runFor(10100);
