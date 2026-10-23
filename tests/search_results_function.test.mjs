@@ -1022,7 +1022,8 @@ function reviewUpstream(receipt=2) {
 test('review route settles its extra token, caches only safe data, and isolates ordinary ASIN results', async () => {
   config.review_checker={...reviewConfig}; config.analyze_top_sellers=true; config.analyze_exclude=''; reviewUpstream();
   const result=await body(await reviewRun()); assert.equal(result.review.grade,'A'); assert.equal(calls.length,1);
-  assert.deepEqual(Object.keys(result.items[0]),['asin','title','image','price_cents','as_of']);
+  // A Buy Box total keeps its shipping fact (A34/C16): the report says "incl. shipping".
+  assert.deepEqual(Object.keys(result.items[0]),['asin','title','image','price_cents','as_of','price_includes_shipping']);
   assert.equal(result.items.length,1); assert.equal(JSON.parse([...values.values()][0]).tokens,2);
   assert(!JSON.stringify(result).includes('monthlySold')); assert(!JSON.stringify(result).includes('PRIVATE'));
   assert.equal(JSON.stringify(result.review).match(/[0-9]/),null);
@@ -1030,6 +1031,23 @@ test('review route settles its extra token, caches only safe data, and isolates 
   assert([...cache.keys()].every(url=>new URL(url).searchParams.get('grade')==='reviews'));
   config.review_checker.enabled=false;
   assert.equal((await body(await reviewRun())).reason,'disabled'); assert.equal(calls.length,1);
+});
+// Codex review 2026-10-23 #6 (A34/C16): the review report shows the price the way Deal Spotter does,
+// so the item keeps Keepa's item/shipping split, or says the Buy Box total includes shipping.
+test('review report keeps the shipping facts of the price it shows', async () => {
+  config.review_checker={...reviewConfig}; reviewUpstream();
+  const upstream = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    const data = await (await upstream(url, options)).json();
+    Object.assign(data.products[0].stats, {buyBoxPrice:1200, buyBoxShipping:199});
+    return Response.json(data);
+  };
+  const split = (await body(await reviewRun())).items[0];
+  assert.deepEqual([split.price_cents, split.shipping_cents, 'price_includes_shipping' in split], [1200, 199, false]);
+  assert.deepEqual(Object.keys(split), ['asin','title','image','price_cents','as_of','shipping_cents']);
+  cache.clear(); now+=1001; reviewUpstream();
+  const total = (await body(await reviewRun())).items[0];
+  assert.deepEqual([total.price_cents, 'shipping_cents' in total, total.price_includes_shipping], [1399, false, true]);
 });
 test('review policy changes cannot reuse previous grades', async () => {
   config.review_checker={...reviewConfig}; reviewUpstream(); await reviewRun(); now+=1001;
@@ -1128,8 +1146,8 @@ test('tools_merge: a review report carries the price grade from the same lookup,
   assert.equal(calls.length, 2, 'one lookup per report, as before');
   // 1399 against a 2000 average and a 2999 list price: A, 30% below.
   assert.deepEqual(on.price_check, {grade:'A', label:'Great price'});  // the letter and its label only
-  assert.deepEqual(Object.keys(on.items[0]), ['asin','title','image','price_cents','as_of']);
-  for (const word of ['_deal', 'avg90', '2999', 'list_price', 'price_includes_shipping']) assert(!JSON.stringify(on).includes(word), word);
+  assert.deepEqual(Object.keys(on.items[0]), ['asin','title','image','price_cents','as_of','price_includes_shipping']);
+  for (const word of ['_deal', 'avg90', '2999', 'list_price']) assert(!JSON.stringify(on).includes(word), word);
   assert.deepEqual(await body(await reviewRun()), on); assert.equal(calls.length, 2);
   const cached = await [...cache.values()].at(-1).clone().json();
   assert.equal(cached._deal.avg90, 2000); assert.equal(cached._deal.item.list_price_cents, 2999);

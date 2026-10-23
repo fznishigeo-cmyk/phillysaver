@@ -13,7 +13,7 @@ const fs = require("fs");
 const path = require("path");
 const { amazonTag, checkAmazonTag, checkToolAmazonUrl, checkToolProductUrl, checkSovrnLinks, overrideLinks, overrideNote,
         photoRules, checkPhotos, frontRules, frontPageSnapshot, identifyFrontCards,
-        frontPageFlagLine, frontPageFlags, eventLinks, toolLinks } = require("./site_check_logic.cjs");
+        frontPageFlagLine, frontPageFlags, eventLinks, toolLinks, toolsDeploy } = require("./site_check_logic.cjs");
 
 const SITE = (process.env.SITE || "https://wowpriced.com/").replace(/\/?$/, "/");
 const UA = "wowpriced-site-check/1.0 (+https://wowpriced.com; hello@wowpriced.com)";
@@ -197,6 +197,18 @@ async function checkMergedTools(page, tag) {
     }
     return `home links; spotter and landing pages' typed-words boxes and Amazon URLs (unopened, no lookup); ${((Date.now() - started) / 1000).toFixed(1)}s`;
   } finally { await page.unroute("**/*", ownSiteOnly); }
+}
+
+// Step 15 checks the tools the deployed site has (toolsDeploy); a pending deploy is its own note.
+const deployNotes = new Set();
+let deployedConfig;
+async function checkDeployedTools(page) {
+  const config = fs.readFileSync(path.join(__dirname, "../config.yaml"), "utf8");
+  // One paced, no-store read per run, shared by both devices.
+  deployedConfig ??= readSite("search-config.json").then((r) => r.ok ? r.text() : "", () => "");
+  const tools = toolsDeploy(config, await deployedConfig);
+  if (tools.note) deployNotes.add(tools.note);
+  return (tools.merged ? checkMergedTools : checkTools)(page, amazonTag(config));
 }
 
 async function walk(page, doc, device) {
@@ -461,11 +473,7 @@ async function walk(page, doc, device) {
     await page.screenshot({ path: "shots/phone-support.png", fullPage: false });
   });
   // Run step 15 while home is still loaded, before the other page visits.
-  await step(15, "Tools", async () => {
-    const config = fs.readFileSync(path.join(__dirname, "../config.yaml"), "utf8");
-    const merged = /^tools_merge:[ \t]*true\b/m.test(config);
-    return (merged ? checkMergedTools : checkTools)(page, amazonTag(config));
-  });
+  await step(15, "Tools", () => checkDeployedTools(page));
   // Browser visits replace step 8's old HTML fetches: one navigation each,
   // with the same content checks and request/analytics guard as home.
   for (const [name, url] of [["deal", dealPage], ["best-today", "best-deals-today/"]]) {
@@ -603,6 +611,7 @@ async function walk(page, doc, device) {
       say(`${walk.device} ${step.n}. ${step.name}: ${step.ok ? step.note || "ok" : "FAIL " + step.reason}`);
     }
   }
+  deployNotes.forEach((note) => say(`deploy note: ${note}`));
   if (!photos.ok || !front.ok || [desktop, mobile].some((walk) => walk.results.some((step) => !step.ok))) process.exitCode = 1;
   if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, out.join("\n") + "\n");
 })().catch((e) => { console.error(e); process.exit(1); });

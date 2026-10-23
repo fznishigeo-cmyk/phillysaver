@@ -7,7 +7,7 @@ from html import escape
 from pathlib import Path
 
 from ..config import validated_review_checker
-from . import amazon_as_of, deal_spotter, search_boost, seo, tool_pages, tools_merge, tracking
+from . import amazon_as_of, deal_spotter, search_boost, seo, shipping_note, tool_pages, tools_merge, tracking
 
 TEMPLATES = Path(__file__).with_name("templates")
 PATHS = ("/review-checker/", "/reviewmeta-alternative/")
@@ -67,7 +67,8 @@ def script(cfg):
     script = ('"use strict";\nvar toolSettings=' + json.dumps(settings).replace("<", "\\u003c") + ';\n'
               + shared + '\n' + '\n'.join([deal_spotter.EXCLUDE, *names, (TEMPLATES / "tool-name-panel.js").read_text()])
               + (TEMPLATES / "review-checker.js").read_text())
-    return tools_merge.review_script(script, source) if tools_merge.enabled(cfg) else script
+    script = tools_merge.review_script(script, source) if tools_merge.enabled(cfg) else script
+    return shipping_note.review_script(script, cfg)
 
 
 def _asin(row):
@@ -127,7 +128,7 @@ def publish(out, cfg, now, site_url, disclosure):
     stores = {d["store"].casefold() for d in live if d.get("store")}
     assets = {}
     merged = tools_merge.enabled(cfg)
-    css = (TEMPLATES / "review-checker.css").read_text() + (tools_merge.REVIEW_CSS if merged else '')
+    css = (TEMPLATES / "review-checker.css").read_text() + (tools_merge.REVIEW_CSS if merged else '') + shipping_note.review_css(cfg)
     for suffix, content in (("js", script(cfg)), ("css", css)):
         (out / ("review-checker." + suffix)).write_text(content)
         assets[suffix] = hashlib.sha256(content.encode()).hexdigest()[:12]

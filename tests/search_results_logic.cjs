@@ -72,5 +72,17 @@ async function respond(call, items) {call.resolve({ok:true, json:async () => ({i
   assert(s.ctx.searchRecoveryHtml().includes('Search Amazon for'));
   s.ctx.renderSearchCount([]); await s.flush(); assert.equal(s.calls.length, 3, 'rerenders cannot refetch');
   assert(!JSON.stringify(s.events).includes('cupping'));
-  console.log('Amazon result page logic passed');
+  // A34/C16 (Codex review 2026-10-23 #6): with price_shipping_note, the Deal Spotter's shipping
+  // note right under the price; without it, the previous markup.
+  const shippingNote = code.includes('d.price_includes_shipping === true');
+  for (const [extra, shown] of [[{shipping_cents:2515}, '<p class="headline">+ $25.15 shipping</p>'],
+    [{price_includes_shipping:true}, '<p class="headline">incl. shipping</p>'],
+    [{shipping_cents:0}, ''], [{shipping_cents:25.5}, ''], [{price_includes_shipping:'yes'}, ''], [{}, '']]) {
+    const t = setup('?preview=search'); t.query('kettle'); await t.flush();
+    await respond(t.calls[0], [{...item, ...extra}]);
+    const markup = t.elements['amazon-results'].innerHTML, note = shippingNote ? shown : '';
+    assert.equal(/shipping/.test(markup), Boolean(note), JSON.stringify(extra));
+    assert(markup.includes('$15.99</span></p>' + note + '<p class="headline">Amazon price as of '), JSON.stringify(extra));
+  }
+  console.log('Amazon result page logic passed; shipping note: ' + (shippingNote ? 'on' : 'off'));
 })().catch(error => {console.error(error); process.exitCode = 1;});

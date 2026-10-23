@@ -17,7 +17,9 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
     const stats={current:Array(18).fill(-1),avg180:Array(18).fill(-1),atIntervalStart:Array(18).fill(-1)};
     if(grade!=='C'){stats.current[16]=45;stats.current[17]=100;}
     if(grade==='A'){stats.avg180[16]=44;stats.atIntervalStart[17]=75;}
-    return {items:[{asin,title:'Everyday wireless over-ear headphones with a comfortable fit',image:'https://m.media-amazon.com/images/I/test.jpg',price_cents:2499,as_of:'2026-10-22T01:00:00Z'}],review:gradeReviews({stats},settings)};
+    return {items:[{asin,title:'Everyday wireless over-ear headphones with a comfortable fit',image:'https://m.media-amazon.com/images/I/test.jpg',price_cents:2499,as_of:'2026-10-22T01:00:00Z',
+      // A34/C16: Keepa's item/shipping split, or a Buy Box total that includes shipping.
+      ...(grade==='B'?{shipping_cents:2515}:grade==='C'?{price_includes_shipping:true}:{})}],review:gradeReviews({stats},settings)};
   }
   try {
     for(const [width,height] of [[390,844],[768,1024],[1280,800],[1920,1080]])for(const theme of ['light','dark']){
@@ -129,6 +131,8 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
         assert.equal(await page.locator('#review-report a[href*="review-rank"]').count(),0);
         const text=await page.locator('#review-report').innerText();assert(!/\bstars?\b|\bFAIL\b|\bWARN\b|100 reviews|4\.5/.test(text));
         assert(text.includes('Price as of'));await page.locator('.price-note summary').first().click();
+        // The Deal Spotter's shipping note under the price (Codex review 2026-10-23 #6).
+        assert.equal(await page.locator('.current-price').textContent(),{A:'$24.99',B:'$24.99+ $25.15 shipping',C:'$24.99incl. shipping'}[grade]);
         // Photo, name and grade box each open the button's tagged Amazon page; Price details only toggles.
         assert(await page.locator('.price-note').first().evaluate(e=>e.open));
         assert.equal(await page.evaluate(()=>window.amazonClicks.length),0);assert.equal(new URL(page.url()).searchParams.get('asin'),'B012345678');

@@ -49,8 +49,11 @@ export function reviewResponse(products, items, asin, cfg) {
   const product = products.find(p => p?.asin === asin);
   if (!product || typeof product.title !== "string" || !product.title.trim()) return {items:[], reason:"no_product"};
   const item = items[0];
-  // Exact allowlist: no list/past prices, rating, count or sales numbers.
+  // Exact allowlist: no list/past prices, rating, count or sales numbers. The price keeps its
+  // shipping fact (A34/C16), shown as on Deal Spotter: "+ $X shipping" or "incl. shipping".
   return {items:[item ? {asin:item.asin, title:item.title, image:item.image,
-    price_cents:item.price_cents, as_of:item.as_of} :
+    price_cents:item.price_cents, as_of:item.as_of,
+    ...(Number.isSafeInteger(item.shipping_cents) && item.shipping_cents > 0 ? {shipping_cents:item.shipping_cents} : {}),
+    ...(item.price_includes_shipping === true ? {price_includes_shipping:true} : {})} :
     {asin, title:product.title.trim().slice(0, 500), image:""}], review:gradeReviews(product, cfg)};
 }

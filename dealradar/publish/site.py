@@ -40,6 +40,7 @@ from .tracking import apply_tracking
 from .template_slots import replace_slot, validate_slot
 from . import comments
 from . import search_results
+from . import shipping_note
 from . import search_boost
 from . import search_box_glow
 from . import same_product_spacing
@@ -188,6 +189,7 @@ def _page_template(html: str, cfg, *, home: bool = False) -> str:
             lambda m: m[1] if cfg.search_amazon and cfg.affiliate_amazon_tag else "", html)
         html = html.replace("{{SEARCH_AMAZON_TAG}}", json.dumps(cfg.affiliate_amazon_tag).replace("<", "\\u003c"))
         html = search_results.template(html, cfg)
+        html = shipping_note.home(html, cfg)
         html = search_boost.template(html, cfg)
         html = search_circle.template(html, cfg)
         html = search_analyze.template(html, cfg)
@@ -1223,6 +1225,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     site_version = front_mix.site_version(site_version, cfg)
     site_version = soft_buttons.site_version(site_version, cfg)
     site_version = tools_merge.site_version(site_version, cfg)
+    site_version = shipping_note.site_version(site_version, cfg)
     if cfg.brand_pages:
         site_version = hashlib.sha256((site_version + "brand-pages").encode()).hexdigest()[:12]
     if cfg.open_box_scarcity or (cfg.front_page.get("appeal", {}).get("want") or {}).get("enabled"):
@@ -1482,6 +1485,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     search_results.publish(out, cfg)
     search_more.publish(out, cfg)
     analyze_top_sellers.publish(out, cfg)
+    shipping_note.publish(out, cfg)
     page_polish.publish(out, cfg)
     if cfg.brand_pages:
         from . import brand_pages

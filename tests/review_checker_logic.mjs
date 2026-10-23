@@ -43,6 +43,13 @@ assert(!passed(avg,'natural_pace'),'weighted averages are not interval-start cou
 assert.equal(gradeReviews({...product(),monthlySold:100},{...cfg,grade_b_checks:1}).grade,'B');
 assert.deepEqual(reviewResponse([],[],'B012345678',cfg),{items:[],reason:'no_product'});
 assert.equal(reviewResponse([{asin:'B012345678',title:'Product'}],[],'B012345678',cfg).review.grade,'C');
+// A34/C16 (Codex review 2026-10-23 #6): shipping facts stay with the price; nothing else is added.
+const shown=(extra)=>reviewResponse([{asin:'B012345678',title:'Product'}],[{asin:'B012345678',title:'Product',image:'',
+  price_cents:15384,as_of:'2026-10-22T01:00:00Z',list_price_cents:24000,monthlySold:100,category:'Kettles',...extra}],'B012345678',cfg).items[0];
+assert.deepEqual(shown({shipping_cents:2515}),{asin:'B012345678',title:'Product',image:'',price_cents:15384,as_of:'2026-10-22T01:00:00Z',shipping_cents:2515});
+assert.deepEqual(shown({price_includes_shipping:true}),{asin:'B012345678',title:'Product',image:'',price_cents:15384,as_of:'2026-10-22T01:00:00Z',price_includes_shipping:true});
+for(const extra of [{},{shipping_cents:0},{shipping_cents:-1},{shipping_cents:'2515'},{price_includes_shipping:'true'}])
+  assert.deepEqual(Object.keys(shown(extra)),['asin','title','image','price_cents','as_of'],JSON.stringify(extra));
 const script=fs.readFileSync(process.argv[3],'utf8').split('(function () {')[0];
 const context=vm.createContext({URL});vm.runInContext(script,context);
 for(const input of ['B012345678','b012345678','https://www.amazon.com/dp/B012345678?tag=other','amazon.com/gp/product/B012345678','https://smile.amazon.com/name/dp/B012345678','https://amazon.com/?asin=B012345678'])assert.equal(context.reviewInput(input).asin,'B012345678');
