@@ -5,11 +5,17 @@ local directory stands in for the bucket, file:// remotes for GitHub."""
 import gzip
 import hashlib
 import json
+import logging
 import os
 import re
+import shutil
 import sqlite3
 import subprocess
+import time
+from contextlib import closing
+from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -44,6 +50,8 @@ case "$op" in
   cp)
     if [[ "$2" == s3://* ]]; then
       [[ -z "${FAKE_FAIL_PUT:-}" ]] || fail AccessDenied PutObject "$2"
+      # A stalled upload: of every object ("all") or of state/latest.enc only.
+      case "${FAKE_SLOW_PUT:-}:$2" in all:*|latest:*/latest.enc) exec sleep 30 ;; esac
       mkdir -p "$(dirname "$(local_path "$2")")" && cp "$1" "$(local_path "$2")"
     else
       [[ -f "$(local_path "$1")" ]] || fail 404 HeadObject "$1"
@@ -304,6 +312,140 @@ exit 1
     (repo / "state.db").unlink()
     assert run(repo, RESTORE).returncode == 0
     assert (repo / "state.db").read_bytes() == plain
+
+
+# ------------------------------------------------------ pre-send checkpoint
+
+RECORD_TIMEOUT = r"""#!/usr/bin/env bash
+# Records the limit r2_aws gives each call, then enforces it with the real timeout.
+printf '%s\n' "$1" >> "$FAKE_LIMITS"
+exec "$REAL_TIMEOUT" "$@"
+"""
+
+
+def as_checkpoint(repo, monkeypatch, *, slow=""):
+    """Route dealradar.persistence's checkpoints to the real commit_state.sh in
+    the fixture repo, over the fake R2, with the env the checkpoint builds.
+    Returns the file that collects the script's stdout."""
+    from dealradar import persistence
+
+    tmp = repo.parent
+    (tmp / "bin" / "timeout").write_text(RECORD_TIMEOUT)
+    (tmp / "bin" / "timeout").chmod(0o755)
+    env = {**SECRETS, "PATH": f"{tmp / 'bin'}:{os.environ['PATH']}", "REAL_TIMEOUT": shutil.which("timeout"),
+           "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null", "FAKE_R2": str(tmp / "r2"),
+           "FAKE_LOG": str(tmp / "aws.log"), "FAKE_LIMITS": str(tmp / "limits.txt"), "FAKE_SLOW_PUT": slow,
+           "GITHUB_RUN_ID": "404", "GITHUB_RUN_ATTEMPT": "1", "STATE_DB_KEY": KEY, "DEALRADAR_DURABLE_STATE": "1"}
+    for name in [n for n in os.environ if n.startswith(("R2_", "AWS_", "GITHUB_", "DEALRADAR_"))]:
+        monkeypatch.delenv(name)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    output = tmp / "checkpoint.log"
+
+    def popen(command, **kwargs):
+        assert command == ["bash", str(repo.resolve() / "scripts" / "commit_state.sh")]
+        with output.open("w") as out:
+            return subprocess.Popen(["bash", str(SCRIPT)], **{**kwargs, "stdout": out})
+
+    monkeypatch.setattr(persistence, "ROOT", repo.resolve())
+    monkeypatch.setattr(persistence, "subprocess", SimpleNamespace(
+        Popen=popen, DEVNULL=subprocess.DEVNULL, TimeoutExpired=subprocess.TimeoutExpired))
+    return output
+
+
+@pytest.mark.parametrize("primary,r2_s", [(True, None), (True, 0), (False, 0)],
+                         ids=["primary", "primary-r2-share-spent", "off-r2-share-spent"])
+def test_checkpoint_r2_deadline_binds_only_the_primary_upload(r2repo, monkeypatch, primary, r2_s):
+    from dealradar import persistence
+
+    repo = r2repo
+    configure(repo, primary=primary, r2_copy=True)
+    plain = write_state(repo, "v1")
+    output = as_checkpoint(repo, monkeypatch)
+    if r2_s is not None:
+        monkeypatch.setattr(persistence, "CHECKPOINT_R2_S", r2_s)  # spent before the first upload
+    limits = repo.parent / "limits.txt"
+    db = SimpleNamespace(path=str(repo / "state.db"))
+    if primary and r2_s == 0:
+        with pytest.raises(OSError, match=r"^state checkpoint failed \(exit 1\)$"):
+            persistence.checkpoint_state(db)
+        assert "[commit_state] r2 primary: upload failed: timeout; refusing push" in output.read_text().splitlines()
+        assert aws_calls(repo) == [] and origin_branches(repo) == {"main"}
+        return
+    persistence.checkpoint_state(db)
+    assert tree(repo) == {"state.db.enc"} and decrypt(branch_blob(repo, "state.db.enc"), repo.parent) == plain
+    if primary:
+        # Normal checkpoint: both uploads first, each limited to the checkpoint's R2 share (not 180 s).
+        assert [call.split()[3] for call in aws_calls(repo)] == ["cp", "cp"]
+        assert all(persistence.CHECKPOINT_R2_S - 10 < int(s) <= persistence.CHECKPOINT_R2_S
+                   for s in limits.read_text().split())
+        return
+    # Off: the deadline is never read; the checkpoint logs and pushes exactly as before.
+    assert aws_calls(repo) == [] and not limits.exists()
+    patterns = [r"\[commit_state\] size \{.*\}", "[commit_state] origin/data does not exist yet — creating an orphan branch",
+                r"\[commit_state\] state\.db \d+ -> state\.db\.enc \d+", "[commit_state] state committed to origin/data",
+                "[commit_state] r2 copy: skipped (pre-send checkpoint; the final save copies)"]
+    lines = output.read_text().splitlines()
+    assert len(lines) == len(patterns)
+    for line, pattern in zip(lines, patterns):
+        assert re.fullmatch(pattern, line) or line == pattern, line
+
+
+@pytest.mark.parametrize("limit,slow", [(BELOW, "all"), (ABOVE, "all"), (ABOVE, "latest")],
+                         ids=["enc", "pointer", "pointer-latest-only"])
+def test_slow_upload_fails_the_checkpoint_cleanly_and_the_final_save_retries(r2repo, monkeypatch, caplog,
+                                                                             limit, slow):
+    # Code review 2026-10-23: with r2_primary on, each checkpoint upload had
+    # up to 180 s, past CHECKPOINT_TIMEOUT_S; the checkpoint was then killed,
+    # possibly mid-push. The uploads now stop at the checkpoint's R2 deadline.
+    from dealradar import persistence
+    from dealradar.db import DB
+
+    repo = r2repo
+    configure(repo, max_mb=limit)
+    output = as_checkpoint(repo, monkeypatch, slow=slow)
+    # Scaled down 15x (150 s / 60 s); the fake upload stalls 30 s, past both.
+    monkeypatch.setattr(persistence, "CHECKPOINT_TIMEOUT_S", 10)
+    monkeypatch.setattr(persistence, "CHECKPOINT_R2_S", 4)
+    limits = repo.parent / "limits.txt"
+    db = DB(repo / "state.db")
+    started = time.monotonic()
+    with caplog.at_level(logging.WARNING, logger="dealradar.persistence"):
+        assert not persistence.prepare_delivery(db, "telegram", "deal-1", datetime(2026, 10, 24, 12, tzinfo=timezone.utc))
+    assert time.monotonic() - started < persistence.CHECKPOINT_TIMEOUT_S
+    # The script refused on its own; the checkpoint was not killed.
+    assert "(state checkpoint failed (exit 1)); no sends this run" in caplog.text
+    assert "timed out" not in caplog.text
+    assert any(re.fullmatch(r"\[commit_state\] r2 primary: upload failed: [a-z ]+; refusing push", line)
+               for line in output.read_text().splitlines()), output.read_text()
+    assert not [s for s in NEVER_PRINTED if s in output.read_text()]
+    # Refused before git: no data branch (so no pointer), no worktree left over.
+    assert origin_branches(repo) == {"main"} and not (repo / ".state-worktree").exists()
+    assert [call.split()[3] for call in aws_calls(repo)] == ["cp"] * (2 if slow == "latest" else 1)
+    assert not (bucket(repo) / "state" / "latest.enc").exists()
+    checkpoint_limits = limits.read_text().split()
+    assert all(0 < int(s) <= persistence.CHECKPOINT_R2_S for s in checkpoint_limits)
+    # As before: this send waits for the next run, the process sends nothing more.
+    assert db.checkpoint_failed
+    assert db.conn.execute("SELECT status FROM outgoing WHERE dedup_token='deal-1'").fetchone()[0] == "rejected"
+    db.close()
+    # The workflow's final save (no checkpoint marker, no deadline: 180 s per call) lands.
+    monkeypatch.delenv("FAKE_SLOW_PUT")
+    res = run(repo, run_id="505")
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert "state committed to origin/data" in res.stdout
+    assert limits.read_text().split()[len(checkpoint_limits):][:2] == ["180", "180"]
+    if limit == ABOVE:
+        p = pointer(repo)
+        obj = (bucket(repo) / p["key"]).read_bytes()
+        assert p["run_id"] == "505" and len(obj) == p["bytes"] and hashlib.sha256(obj).hexdigest() == p["sha256"]
+    else:
+        assert tree(repo) == {"state.db.enc"}
+    (repo / "state.db").unlink()
+    res = run(repo, RESTORE)
+    assert res.returncode == 0, res.stdout + res.stderr
+    with closing(sqlite3.connect(repo / "state.db")) as conn:
+        assert conn.execute("SELECT status FROM outgoing WHERE dedup_token='deal-1'").fetchone() == ("rejected",)
 
 
 # ----------------------------------------------------------------- restore

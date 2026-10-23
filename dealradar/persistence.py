@@ -18,6 +18,11 @@ log = logging.getLogger(__name__)
 # commit_state.sh retries a raced push with 2+4+8+16 s of backoff plus a
 # fetch each time; 60 s timed out live (2026-10-13 hourly Pinterest step).
 CHECKPOINT_TIMEOUT_S = 150
+# R2 primary uploads before that push. In a checkpoint the uploads must end
+# this many seconds after its start (R2_DEADLINE, scripts/r2_copy.sh): a slow
+# R2 then fails the save cleanly before git is touched, never a kill
+# mid-push, and the push keeps the other 90 s.
+CHECKPOINT_R2_S = 60
 
 
 def delivery_run_key(now, run_key: str | None = None) -> str:
@@ -63,7 +68,8 @@ def checkpoint_state(db) -> None:
     proc = subprocess.Popen(["bash", str(ROOT / "scripts/commit_state.sh")], cwd=ROOT,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                             start_new_session=True,
-                            env={**os.environ, "DEALRADAR_STATE_CHECKPOINT": "1"})
+                            env={**os.environ, "DEALRADAR_STATE_CHECKPOINT": "1",
+                                 "R2_DEADLINE": str(int(time.time()) + CHECKPOINT_R2_S)})
     try:
         code = proc.wait(timeout=CHECKPOINT_TIMEOUT_S)
     except subprocess.TimeoutExpired:
