@@ -251,7 +251,7 @@ class Plan:
         for deal, options in entries:
             need, ceiling, size, label, live, used, idle = options
             key = deal["dedupe_key"]
-            request = ((str(deal["asin"]).strip().upper(), used, live, label == "buybox_top_new",
+            request = ((str(deal["asin"]).strip().upper(), used, live, label.endswith("buybox_top_new"),
                         key in self.published, deadlines.get(key) == "top")
                        if self.cfg.keepa_unique_asin_rechecks_enabled else key)
             if request in requests:
@@ -261,7 +261,7 @@ class Plan:
             reserve = max(MIN_FOR_DEAL_QUERY, self.cfg.keepa_reserve_tokens) if hidden else MIN_FOR_DEAL_QUERY
             cost = min(ceiling, max(0, self.costs.get(key, ceiling)))
             mode = (key in self.published, deadlines.get(key) == "top", used, live,
-                    label == "buybox_top_new", surplus)
+                    label.endswith("buybox_top_new"), surplus)
             group = groups.get(mode)
             # The final published call may take compatible following rows;
             # never let hidden rows hitch ahead of another published mode.

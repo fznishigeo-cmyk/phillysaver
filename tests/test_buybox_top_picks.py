@@ -29,12 +29,12 @@ def cfg():
     return cfg
 
 
-def transport(monkeypatch, db, records, *, tokens=3500, seconds=1, failure=None):
+def transport(monkeypatch, db, records, *, tokens=3500, seconds=1, failure=None, rate=60):
     clock, elapsed, calls, balance = [NOW], [0], [], [tokens]
     monkeypatch.setenv("KEEPA_KEY", "offline")
     monkeypatch.setattr(util, "now_utc", lambda: clock[0])
     monkeypatch.setattr(pipeline.time, "monotonic", lambda: elapsed[0])
-    KeepaBudget(tokens, 60, NOW).save(db)
+    KeepaBudget(tokens, rate, NOW).save(db)
 
     def get(url, params=None, **kwargs):
         assert url == "https://api.keepa.com/product"
@@ -49,9 +49,9 @@ def transport(monkeypatch, db, records, *, tokens=3500, seconds=1, failure=None)
         if failure == "lost":
             raise httpx.ReadTimeout("offline")
         if failure == "429":
-            return httpx.Response(429, json={"tokensLeft": balance[0], "refillRate": 60})
+            return httpx.Response(429, json={"tokensLeft": balance[0], "refillRate": rate})
         return httpx.Response(200, json={"products": [records[a] for a in asins if a in records],
-                              "tokensConsumed": cost, "tokensLeft": balance[0], "refillRate": 60})
+                              "tokensConsumed": cost, "tokensLeft": balance[0], "refillRate": rate})
 
     fetcher = mock_keepa_get(monkeypatch, get)
     fetcher._clock = lambda: elapsed[0]
@@ -347,3 +347,130 @@ def test_surplus_used_reads_ignore_the_regular_used_share(db, cfg, monkeypatch, 
     requested = {a for c in calls for a in c["asin"].split(",")}
     assert requested == ({d["asin"] for d in rows} if surplus else set())
     assert result["tokens"]["surplus_spent"]["rest"] == (39 if surplus else 0)
+
+
+def hourly_inventory(db, *, top_count=40, rest_count=260, age=65):
+    cfg = load_config()
+    cfg.feature_flags["keepa"] = True
+    cfg.keepa_hidden_new_tokens_per_run = cfg.keepa_hidden_used_scans_per_run = 0
+    stamp = util.iso(NOW - timedelta(minutes=age))
+    top = [seed(db, cfg, asin=f"B{i:09d}", price_rechecked_at=stamp,
+                buybox_requested_at=stamp,
+                buybox_check={"asin": f"B{i:09d}", "final": 25, "price": 25,
+                              "at": stamp, "source": "buybox"}) for i in range(top_count)]
+    rest = [seed(db, cfg, asin=f"B{i + top_count:09d}", codes=["SAVE"],
+                 seen=NOW - timedelta(days=1),
+                 price_rechecked_at=util.iso(NOW - timedelta(hours=13))) for i in range(rest_count)]
+    remember(db, top=top, wall=top)
+    # A normal 10-minute start gap plus the shipped jitter margin forecasts
+    # 20 minutes: a full 1,200-token bucket will lose 400 tokens.
+    db.start_run("previous", "fast", NOW - timedelta(minutes=10))
+    db.start_run("current", "hourly", NOW)
+    records = {d["asin"]: record(d, 25, age=0) for d in top + rest}
+    return cfg, top, rest, records
+
+
+@pytest.mark.parametrize("top_count,reserve,tokens,boxes,rest_checks", [
+    (40, 250, 1200, 40, 240), (110, 250, 1200, 100, 0),
+    (110, 850, 1200, 50, 0), (40, 250, 700, 0, 0),
+])
+def test_hourly_overflow_buys_early_top_then_rest_and_keeps_reserves(
+        db, monkeypatch, top_count, reserve, tokens, boxes, rest_checks):
+    cfg, top, rest, records = hourly_inventory(db, top_count=top_count)
+    cfg.keepa_recheck_surplus_reserve = reserve
+    calls, _, _ = transport(monkeypatch, db, records, tokens=tokens, rate=20)
+    result = run(db, cfg, fast_lane=False, deadline=60)
+    requested = [a for call in calls for a in call["asin"].split(",")]
+    assert requested[:boxes] == [d["asin"] for d in top[:boxes]]
+    assert set(requested[boxes:]) <= {d["asin"] for d in rest}
+    assert len(requested) == boxes + rest_checks
+    assert result["buybox_top"]["requested"] == boxes
+    assert result["tokens"]["surplus_spent"] == {
+        "buybox_top": boxes * 4, "wall_used": 0, "rest": rest_checks}
+    grant = min(max(0, tokens + 400 - 1200), max(0, tokens - 150 - reserve))
+    assert result["tokens"]["surplus_granted"] == grant
+    assert result["tokens"]["requested"] == boxes * 4 + rest_checks == grant
+    assert result["tokens"]["bucket_end"] == tokens - grant >= reserve + 150
+    assert result["token_plan"]["granted_per_minute"] == 20
+    assert result["token_plan"]["allocated_per_minute"] <= result["token_plan"]["rechecks_granted_per_minute"]
+    assert result["tokens"]["overflow_estimate"] == max(0, tokens - grant + 400 - 1200)
+    before = deepcopy(db.all_deals()), len(calls)
+    run(db, cfg, fast_lane=False, deadline=60)
+    assert (db.all_deals(), len(calls)) == before
+
+
+@pytest.mark.parametrize("fast_lane,enabled,expected", [
+    (False, False, 0), (False, True, 40), (True, False, 0), (True, True, 0),
+])
+def test_hourly_surplus_switch_preserves_fast_lane_and_rollback(db, monkeypatch, fast_lane, enabled, expected):
+    cfg, top, _, records = hourly_inventory(db, rest_count=0)
+    cfg.keepa_hourly_surplus_buybox = enabled
+    calls, _, _ = transport(monkeypatch, db, records, tokens=1200, rate=20)
+    result = run(db, cfg, fast_lane=fast_lane, deadline=60)
+    assert [a for call in calls for a in call["asin"].split(",")] == [d["asin"] for d in top[:expected]]
+    assert result["tokens"]["requested"] == expected * 4
+    assert result["tokens"]["overflow_estimate"] == 400 - expected * 4
+
+
+@pytest.mark.parametrize("age,requested_age,tried", [(49, 49, False), (65, 5, False), (65, 65, True)])
+def test_hourly_early_buybox_keeps_lookahead_and_retry_clocks(db, monkeypatch, age, requested_age, tried):
+    cfg, top, _, records = hourly_inventory(db, top_count=1, rest_count=0, age=age)
+    row = top[0]
+    row["buybox_requested_at"] = util.iso(NOW - timedelta(minutes=requested_age))
+    if tried:
+        row["recheck_tried_at"] = util.iso(NOW - timedelta(minutes=5))
+    db.update_deal(row["dedupe_key"], payload=row)
+    calls, _, _ = transport(monkeypatch, db, records, tokens=1200, rate=20)
+    assert run(db, cfg, fast_lane=False, deadline=60)["tokens"]["requested"] == 0
+    assert calls == []
+
+
+@pytest.mark.parametrize("deadline,expected", [(6.1, 0), (6.3, 40)])
+def test_hourly_surplus_keeps_price_recheck_deadline(db, monkeypatch, deadline, expected):
+    cfg, _, _, records = hourly_inventory(db)
+    calls, _, elapsed = transport(monkeypatch, db, records, tokens=1200, rate=20, seconds=2)
+    result = run(db, cfg, fast_lane=False, deadline=deadline)
+    assert result["buybox_top"]["requested"] == expected
+    assert result["tokens"]["surplus_spent"]["rest"] == 0
+    assert len(calls) == bool(expected) and elapsed[0] < deadline
+
+
+@pytest.mark.parametrize("failure", ["lost", "429"])
+def test_hourly_surplus_failed_calls_keep_same_run_allowance(db, monkeypatch, failure):
+    cfg, _, _, records = hourly_inventory(db, rest_count=0)
+    calls, _, _ = transport(monkeypatch, db, records, tokens=1200, rate=20, failure=failure)
+    first = run(db, cfg, fast_lane=False, deadline=60)
+    assert first["buybox_top"]["requested"] == 40
+    assert first["tokens"]["bucket_end"] >= 400
+    before = len(calls)
+    run(db, cfg, fast_lane=False, deadline=60)
+    assert len(calls) == before
+
+
+def test_hourly_early_lane_does_not_take_due_stats_funding_in_legacy_click_mode(db, monkeypatch):
+    cfg, top, _, records = hourly_inventory(db, top_count=2, rest_count=0)
+    cfg.keepa_click_price_rule = "off"
+    # Only four overflow tokens: one early Buy Box read consumes them, but
+    # the second row's ordinary due stats check must still be funded.
+    due = top[1]
+    due["price_rechecked_at"] = due["buybox_requested_at"] = util.iso(NOW - timedelta(minutes=95))
+    db.update_deal(due["dedupe_key"], payload=due)
+    calls, _, _ = transport(monkeypatch, db, records, tokens=804, rate=20)
+    result = run(db, cfg, fast_lane=False, deadline=60)
+    assert [a for call in calls for a in call["asin"].split(",")] == [d["asin"] for d in top]
+    assert calls[0]["buybox"] == "1" and "buybox" not in calls[1]
+    assert result["tokens"]["requested"] == 6
+    assert result["done"]["top_new"] == 1
+
+
+def test_hourly_early_buybox_cannot_take_last_call_from_due_top(db, monkeypatch):
+    cfg, top, _, records = hourly_inventory(db, top_count=2, rest_count=0)
+    due = top[1]  # The earlier wall position is optional, the later one is due.
+    due["price_rechecked_at"] = due["buybox_requested_at"] = util.iso(NOW - timedelta(minutes=95))
+    db.update_deal(due["dedupe_key"], payload=due)
+    calls, _, elapsed = transport(monkeypatch, db, records, tokens=1200, rate=20, seconds=2)
+    result = run(db, cfg, fast_lane=False, deadline=6.3)
+    assert [call["asin"] for call in calls] == [due["asin"]]
+    assert result["done"]["buybox_top_new"] == 1
+    assert result["done"]["surplus_buybox_top_new"] == 0
+    assert elapsed[0] < 6.3

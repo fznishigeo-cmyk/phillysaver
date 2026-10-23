@@ -282,6 +282,7 @@ def _fetch_all(sources: list[SourceConfig], fetcher, db: DB, cfg: AppConfig,
             def recheck(discover, source_deadline):
                 price_recheck.update(_recheck_prices(
                     db, cfg, now, image_backfill=fast_lane, fetcher=fetcher,
+                    fast_lane=fast_lane,
                     deadline=source_deadline, overflow_discovery=discover,
                     rate_limited=adapter.rate_limited))
             adapter.recheck = recheck
@@ -1277,7 +1278,7 @@ def _revive_used_price_moved(db: DB, now: datetime) -> int:
 def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                     image_backfill: bool = True,
                     deadline: float | None = None, *, fetcher=None,
-                    overflow_discovery=None, rate_limited=False) -> dict[str, Any]:
+                    overflow_discovery=None, rate_limited=False, fast_lane: bool = True) -> dict[str, Any]:
     """Budgeted volatility checks, correcting plain new prices in-place.
 
     Click-price mode funds published picks and wall cards across transport
@@ -1514,6 +1515,8 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
     idle: list[dict[str, Any]] = []
     recovery: list[dict[str, Any]] = []
     top_reads, surplus_reads = [], []
+    surplus_top_reads = []
+    hourly_surplus = not fast_lane and cfg.keepa_hourly_surplus_buybox and surplus > 0
     for deal in inventory:
         if not deal.get("asin") or not is_amazon_deal(deal):
             continue
@@ -1562,6 +1565,16 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                         and now - last < timedelta(hours=_CONFIRM_GONE_H))
         if box_due and not suspect_wait:
             top_reads.append(deal)
+            continue
+        # Hourly runs can strand overflow while top prices approach their
+        # next funded check. Use the existing idle lookahead, retry and paid
+        # attempt clocks; these early Buy Box reads must remain overflow-only.
+        if (hourly_surplus and key in buybox_top and buybox.eligible(deal)
+                and not _price_hidden_by_promo(deal) and not suspect_wait
+                and not urgent and in_cadence(deal)
+                and idle_eligible(deal) and (requested is None or now - requested >=
+                    timedelta(minutes=cfg.keepa_recheck_interval_minutes))):
+            surplus_top_reads.append(deal)
             continue
         if key in click_visible and not used and not _price_hidden_by_promo(deal) and not suspect_wait:
             continue  # every visible price recheck needs the Buy Box premium
@@ -1718,11 +1731,16 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
             deal, options = row
             key = deal["dedupe_key"]
             if cfg.keepa_click_price_rule == "on":
+                # Optional early reads cannot take the last call slot from
+                # ordinary published/due Buy Box work.
+                if options[3] == "surplus_buybox_top_new":
+                    return (2, box_positions[key])
                 if key in published_positions:
                     return (0, published_positions[key])
-                if options[3] == "buybox_top_new":
+                if options[3].endswith("buybox_top_new"):
                     return (1, box_positions[key])
-            return (2, phase(*row), recovery_order(deal) if phase(*row) == 3 else (positions[key],))
+            return (3 if hourly_surplus else 2, phase(*row),
+                    recovery_order(deal) if phase(*row) == 3 else (positions[key],))
         # A due row keeps its regular funding if earlier checks consume the
         # overflow. Published fallbacks still precede every hidden candidate.
         entries = [(row, False) for row in by_key.values()]
@@ -1804,7 +1822,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                     if not re.fullmatch(r"[A-Z0-9]{10}", asin) or deal.get("final_price") is None:
                         continue
                     policy = (asin, options[4], options[5], deadlines.get(deal["dedupe_key"]) == "top",
-                              options[3] == "buybox_top_new", options[3].startswith("surplus_"),
+                              options[3].endswith("buybox_top_new"), options[3].startswith("surplus_"),
                               cfg.keepa_click_price_rule == "on" and deal["dedupe_key"] in published_positions)
                     by_policy.setdefault(policy, []).append((deal, options))
                 request_candidates = [rows[0] for rows in by_policy.values()]
@@ -1851,10 +1869,15 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
             top_reads.sort(key=lambda d: positions.get(d["dedupe_key"], len(positions)))
         else:
             top_reads.sort(key=lambda d: wall[d["dedupe_key"]])
+        surplus_top_reads.sort(key=lambda d: (
+            published_positions.get(d["dedupe_key"], len(published_positions)),
+            wall.get(d["dedupe_key"], len(wall))))
         surplus_reads.sort(key=lambda d: (util.iso(observed_check(d)), d["dedupe_key"]))
-        lanes = [("buybox_top_new", top_reads),
-                 ("surplus_wall_used", [d for d in surplus_reads if is_used_deal(d) and d["dedupe_key"] in wall]),
-                 ("surplus_rest", [d for d in surplus_reads if not (is_used_deal(d) and d["dedupe_key"] in wall)])]
+        lanes = [("buybox_top_new", top_reads)]
+        if hourly_surplus:
+            lanes.append(("surplus_buybox_top_new", surplus_top_reads))
+        lanes += [("surplus_wall_used", [d for d in surplus_reads if is_used_deal(d) and d["dedupe_key"] in wall]),
+                  ("surplus_rest", [d for d in surplus_reads if not (is_used_deal(d) and d["dedupe_key"] in wall)])]
         extra_groups = []
         for label, rows in lanes:
             modes = {}
@@ -1862,13 +1885,13 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
             left = min(budget.overflow(gap, now) or 0, max(0, (budget.spendable(now) or 0) - reserve))
             for deal in rows:
                 used = is_used_deal(deal)
-                live = bool(cfg.keepa_recheck_top_live and (deal["dedupe_key"] in picks or label == "buybox_top_new"))
+                live = bool(cfg.keepa_recheck_top_live and (deal["dedupe_key"] in picks or label.endswith("buybox_top_new")))
                 asin = str(deal.get("asin") or "").strip().upper()
                 shared = cfg.keepa_unique_asin_rechecks_enabled and (asin, used, live) in requested
                 if label.startswith("surplus_"):
                     # Tokens that would overflow anyway: no used-scan share here
                     # (it rations the regular lanes, which keep their full share).
-                    cost = (USED_RECHECK_TOKENS if used else 1) + live
+                    cost = (USED_RECHECK_TOKENS if used else 1) + live + 2 * label.endswith("buybox_top_new")
                     if not shared and cost > left:
                         continue
                     if not shared:
@@ -1877,7 +1900,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                 modes.setdefault((used, live), []).append(deal)
             stats["planned"][label], stats["done"][label] = len(rows), 0
             for (used, live), rows in modes.items():
-                cost = (USED_RECHECK_TOKENS if used else 1) + live + 2 * (label == "buybox_top_new")
+                cost = (USED_RECHECK_TOKENS if used else 1) + live + 2 * label.endswith("buybox_top_new")
                 group = (rows, max(MIN_FOR_RECHECK, reserve + cost), cost,
                          KEEPA_OFFERS_BATCH if used else KEEPA_BATCH, label, live, used, False)
                 if cfg.keepa_click_price_rule == "on":
@@ -1907,7 +1930,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
         is_photo = label == "photo"
         is_recovery = label.startswith("hidden_")
         is_surplus = label.startswith("surplus_")
-        box_request = label == "buybox_top_new"
+        box_request = label.endswith("buybox_top_new")
         if (is_recovery or is_idle) and not discovery_done:
             discover()
         if is_idle or is_photo or is_recovery:
@@ -2804,6 +2827,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         # the slack; the hourly's tail is for the critic and publishing.
         summary["price_recheck"] = early_recheck or _recheck_prices(
             db, cfg, now, image_backfill=fast_lane,
+            fast_lane=fast_lane,
             deadline=deadline - _RESERVE_FOR_TAIL_S / 2, fetcher=fetcher)
         summary["price_recheck"]["feed_confirmed"] = {k: len(v) for k, v in feed_confirmed.items()}
         keepa_rate_limited = summary["price_recheck"].get("rate_limited", False)
