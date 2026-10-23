@@ -12,7 +12,7 @@ from urllib.parse import urlsplit
 from ..config import social_profiles
 from ..savings import tool_meter
 from ..util import parse_iso
-from . import add_to_cart, amazon_as_of, seo, tool_pages, tracking
+from . import add_to_cart, amazon_as_of, seo, tool_pages, tools_merge, tracking
 
 TEMPLATES = Path(__file__).with_name("templates")
 SLUGS = ("deal-spotter", "fakespot-alternative")
@@ -41,8 +41,10 @@ def reviews_on(cfg):
 
 
 def nav(cfg, links=NAV):
-    # Review Checker ships separately; never link to it while it is OFF.
-    return [(url, label) for url, label in links if url != "/review-checker/" or reviews_on(cfg)]
+    # Review Checker ships separately; never link to it while it is OFF. With tools_merge
+    # the menus name the two tools only (the old pages are keyword landing pages).
+    return [(url, label) for url, label in links if (url != "/review-checker/" or reviews_on(cfg))
+            and (tools_merge.keep(url) or not tools_merge.enabled(cfg))]
 
 
 def menu(cfg):
@@ -86,6 +88,8 @@ def script(cfg):
             'function discountsLink() { return null; }\n')
     result = '\n'.join([settings, EXCLUDE, *functions, glue, (TEMPLATES / "tool-name-panel.js").read_text(),
                         (TEMPLATES / "deal-spotter.js").read_text()])
+    if tools_merge.enabled(cfg):
+        result = tools_merge.spotter_script(result, cfg, source)
     return add_to_cart.spotter_script(result, cfg)
 
 
@@ -123,7 +127,7 @@ PRICES = "deal-spotter-prices.json"
 PRICE_FIELDS = ("status", "final_price", "url", "headline")
 
 
-def price_index(doc, single_source_ok=False):
+def price_index(doc, single_source_ok=False, deal_path=False):
     """The few public fields /api/search?grade=deal reads, for Amazon rows only.
 
     The Pages Function has a 10 ms CPU budget on the free plan; parsing all of
@@ -131,7 +135,7 @@ def price_index(doc, single_source_ok=False):
     the same checks again to whatever it reads here.
     """
     def slim(d):
-        row = {k: d[k] for k in PRICE_FIELDS if k in d}
+        row = {k: d[k] for k in PRICE_FIELDS + (("deal_path",) if deal_path else ()) if k in d}
         if d.get("spotlight"):
             row["spotlight"] = {"until": (d.get("spotlight") or {}).get("until")}
         return row
@@ -149,7 +153,8 @@ def price_index(doc, single_source_ok=False):
     return index
 
 
-def cards(rows):
+def picks(rows, limit=4):
+    """Amazon list-price deals with a photo, in the site's pick order, with their list-price badge."""
     selected = []
     for d in rows:
         url = d.get("url", "")
@@ -164,11 +169,19 @@ def cards(rows):
         badge = tool_meter(price, regular)
         if not badge["hasList"]:
             continue
-        steps = ''
-        if d.get("needs_steps"):
-            if not re.fullmatch(r"/deal/[a-z0-9-]+/", d.get("deal_path", "")):
-                continue
-            steps = f'<a class="deal-steps" href="{escape(d["deal_path"])}">How to get this price</a>'
+        if d.get("needs_steps") and not re.fullmatch(r"/deal/[a-z0-9-]+/", d.get("deal_path", "")):
+            continue
+        selected.append((d, badge))
+        if len(selected) == limit:
+            break
+    return selected
+
+
+def cards(rows):
+    selected = []
+    for d, badge in picks(rows):
+        url, price = d["url"], d["final_price"]
+        steps = f'<a class="deal-steps" href="{escape(d["deal_path"])}">How to get this price</a>' if d.get("needs_steps") else ''
         selected.append('<article class="spotter-deal"><div class="deal-photo"><img src="'
             + escape(d["image_url"], quote=True) + '" alt="' + escape(d["item"], quote=True)
             + '" width="260" height="220" loading="lazy" decoding="async" referrerpolicy="no-referrer"></div>'
@@ -176,8 +189,6 @@ def cards(rows):
             + '<h3>' + escape(d["item"]) + f'</h3><p class="deal-price">${price:.2f}</p>' + steps
             + '<a href="' + escape(url, quote=True)
             + '" target="_blank" rel="sponsored nofollow noopener">Get deal <span aria-hidden="true">↗</span></a></div></article>')
-        if len(selected) == 4:
-            break
     return ''.join(selected)
 
 
@@ -200,6 +211,8 @@ def social_links(cfg):
 
 def footer(cfg, year, disclosure, amazon_store):
     from .site import linked_disclosure
+    if tools_merge.enabled(cfg):
+        return tools_merge.spotter_footer(cfg, year, disclosure, amazon_store, social_links(cfg), nav(cfg))
     # Site-wide trust links (tests/test_established_look.py): About, How we verify, Contact,
     # Privacy and Disclosure (the disclosure line below links the last one).
     groups = (("wowpriced", (("/about.html", "About"), ("/how-it-works.html", "How we verify"),
@@ -245,15 +258,18 @@ def publish(out, cfg, now, site_url, disclosure):
         (out / name).unlink(missing_ok=True)
     if not enabled(cfg):
         return []
+    merged = tools_merge.enabled(cfg)
     # Extend the same configuration read by /api/search. No independent limits.
     config_path = out / "search-config.json"
     if config_path.exists():
         settings = json.loads(config_path.read_text())
         settings["deal_spotter"] = cfg.deal_spotter
+        if merged:
+            settings["tools_merge"] = True  # search.js: 90-day comparison, review page's price grade
         config_path.write_text(json.dumps(settings, separators=(",", ":")))
     doc = json.loads((out / "deals.json").read_text())
     single = cfg.deal_spotter.get("single_source_ok") is True
-    (out / PRICES).write_text(json.dumps(price_index(doc, single), separators=(",", ":")))
+    (out / PRICES).write_text(json.dumps(price_index(doc, single, merged), separators=(",", ":")))
     rows = live_rows(doc, now, single)
     versions = {}
     for name in ASSETS:
@@ -262,29 +278,41 @@ def publish(out, cfg, now, site_url, disclosure):
                        f'phoneDelay = {cfg.pwa_install_phone_delay_s * 1000}', 1)
                    if name == "deal-spotter-install.js" else (TEMPLATES / name).read_text())
         if name == 'deal-spotter.css':
-            content += (TEMPLATES / 'deal-spotter-menu.css').read_text()
+            content += (TEMPLATES / 'deal-spotter-menu.css').read_text() + (tools_merge.SPOTTER_CSS if merged else '')
         (out / name).write_text(content)
         versions[name] = hashlib.sha256(content.encode()).hexdigest()[:12]
     amazon_store = (out / "stores" / "amazon" / "index.html").exists()
-    questions = ''.join('<details><summary>' + escape(q) + '</summary><p>' + escape(a) + '</p></details>' for q, a in FAQ)
-    faq_schema = {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [
-        {"@type": "Question", "name": q, "acceptedAnswer": {"@type": "Answer", "text": a}} for q, a in FAQ]}
-    for slug in SLUGS:
-        title = ("Fake Deal Spotter by wowpriced | Free Amazon Deal Grader" if slug == "deal-spotter" else
+    # tools_merge: the Deal Checker and Discount Finder addresses are keyword landing pages
+    # with their own copy; the tool on them is this one (operator 2026-10-23 ~01:55Z).
+    landing = tools_merge.LANDING if tools_merge.landing_on(cfg) else {}
+    for slug in SLUGS + tuple(landing):
+        page = landing.get(slug)
+        faq = page["faq"] if page else tools_merge.spotter_faq(FAQ) if merged else FAQ
+        questions = ''.join('<details><summary>' + escape(q) + '</summary><p>' + escape(a) + '</p></details>' for q, a in faq)
+        faq_schema = {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [
+            {"@type": "Question", "name": q, "acceptedAnswer": {"@type": "Answer", "text": a}} for q, a in faq]}
+        title = (page["title"] if page else "Fake Deal Spotter by wowpriced | Free Amazon Deal Grader" if slug == "deal-spotter" else
                  "Fakespot Alternative: Free Amazon Deal Grader | wowpriced")
-        description = "Paste any Amazon link and get a deal grade in seconds. Free, no extension needed."
+        description = (escape(page["description"]) if page else
+                       "Paste any Amazon link and get a deal grade in seconds. Free, no extension needed.")
         url = site_url + '/' + slug + '/'
         head = ('<link rel="canonical" href="' + escape(url) + '"><meta property="og:type" content="website">'
                 '<meta property="og:url" content="' + escape(url) + '"><meta property="og:title" content="'
                 + escape(title) + '"><meta property="og:description" content="' + description + '">'
                 '<meta name="twitter:card" content="summary">')
-        if slug == 'deal-spotter':
+        if slug == 'deal-spotter' or page:
             head += seo._json_ld(faq_schema) + seo._json_ld({"@context": "https://schema.org", "@type": "WebApplication",
-                "name": "Fake Deal Spotter by wowpriced", "url": url, "applicationCategory": "ShoppingApplication",
+                "name": (page["name"] if page else "Fake Deal Spotter") + " by wowpriced", "url": url,
+                "applicationCategory": "ShoppingApplication",
                 "operatingSystem": "Any", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}})
+        if page and not cfg.tool_pages.get("public"):
+            head += '<meta name="robots" content="noindex,nofollow">'
         install = ('<link rel="manifest" href="/manifest.webmanifest"><script defer src="/deal-spotter-install.js?v='
                    + versions['deal-spotter-install.js'] + '"></script>') if cfg.pwa_enabled else ''
-        html = seo._fill((TEMPLATES / (slug + '.html')).read_text(), TITLE=escape(title), DESCRIPTION=description,
+        template = (TEMPLATES / (('deal-spotter' if page else slug) + '.html')).read_text()
+        if merged and slug != 'fakespot-alternative':
+            template = tools_merge.spotter_template(template, page)
+        html = seo._fill(template, TITLE=escape(title), DESCRIPTION=description,
             HEAD=head + install, MENU=menu(cfg), FOOTER=footer(cfg, now.year, disclosure, amazon_store), FAQ=questions,
             CSS_VERSION=versions['deal-spotter.css'], JS_VERSION=versions['deal-spotter.js'],
             REVIEW_LINK=('<a id="review-link" class="review-link">Check the reviews →</a>' if reviews_on(cfg) else ''),
@@ -294,8 +322,9 @@ def publish(out, cfg, now, site_url, disclosure):
                         else '<a class="text-link" href="/">Explore today\'s deals →</a>'),
             STORES=stores_row(rows), DEAL_COUNT=f'{len(rows):,}', STORE_COUNT=str(len({d["store"].casefold() for d in rows if d.get("store")})),
             TOP_DEALS=cards(rows), DISCLAIMER=amazon_as_of.DISCLAIMER,
-            INSTALL_HELP=(TEMPLATES / 'pwa-install-help.html').read_text() if cfg.pwa_enabled else '')
-        if slug == 'deal-spotter':
+            INSTALL_HELP=(TEMPLATES / 'pwa-install-help.html').read_text() if cfg.pwa_enabled else '',
+            **(tools_merge.spotter_tokens(rows, reviews_on(cfg)) if merged else {}))
+        if slug == 'deal-spotter' or page:
             html = add_to_cart.spotter_page(html, cfg)
         seo._write_page(out, '/' + slug + '/', tracking.inject(html, tracking.head_snippet(cfg)))
     discovery(out, cfg)

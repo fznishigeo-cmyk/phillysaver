@@ -32,6 +32,12 @@ export function gradeDeal(input = {}, cfg = {}) {
   return {grade, label:{A:'Great price', B:'Good price', C:'Fair price'}[grade], facts};
 }
 
+// tools_merge (operator 2026-10-23): the comparison the grade already makes, as a whole
+// percent of the 90-day average (negative = below), truncated so it never overstates.
+export function avg90Change(price, avg90) {
+  return cents(price) && cents(avg90) ? Math.trunc((price - avg90) * 100 / avg90) : null;
+}
+
 export function publishedDealPrice(doc, asin, now = Date.now()) {
   const rows = (Array.isArray(doc?.deals) ? doc.deals : []).concat(
     (Array.isArray(doc?.spotlight) ? doc.spotlight : []).filter(d => Date.parse(d?.spotlight?.until) > now));

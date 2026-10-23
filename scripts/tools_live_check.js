@@ -76,14 +76,17 @@ async function amazonBreakdown() {
         await page.screenshot({path: `${OUT}/${tool.name}-${size}-start.png`});
         await page.fill(tool.input, asin);
         await page.press(tool.input, "Enter");
-        let grade = "", label = "", price = "", note = "";
+        let grade = "", label = "", price = "", shipping = "", note = "";
         try {
           await page.waitForSelector(`${tool.result}:not([hidden])`, {timeout: 75000});
           await page.waitForTimeout(800);
           grade = (await page.textContent(tool.grade) || "").trim();
           label = (await page.textContent(tool.label) || "").trim();
           // The shown price (public product facts), e.g. "$153.84 + $25.15 shipping".
-          if (tool.price) price = (await page.textContent(tool.price) || "").replace(/\s+/g, " ").replace(/(\S)\+/, "$1 +").trim();
+          if (tool.price) price = (await page.textContent(tool.price) || "").replace(/\s+/g, " ").replace(/(\S)(\+|incl\.)/, "$1 $2").trim();
+          // The note under it: "+ $25.15 shipping", "incl. shipping" (Buy Box price with shipping, C16) or none.
+          const shippingNote = tool.price && page.locator(`${tool.price} .result-shipping`);
+          if (shippingNote && await shippingNote.count()) shipping = ((await shippingNote.first().textContent()) || "").trim();
           await page.screenshot({path: `${OUT}/${tool.name}-${size}-result.png`});
         } catch (_) {
           note = (await page.textContent(tool.message).catch(() => "") || "").trim() || "no result within 75 s";
@@ -92,7 +95,7 @@ async function amazonBreakdown() {
         const ok = response && response.status() === 200 && ["A", "B", "C"].includes(grade) && !errors.length;
         if (!ok) failures++;
         console.log(`${tool.name} ${size}: HTTP ${response && response.status()} grade=${grade || "-"} "${label}"` +
-                    `${price ? " price=" + JSON.stringify(price) : ""}` +
+                    `${price ? " price=" + JSON.stringify(price) + " shipping=" + JSON.stringify(shipping || "none") : ""}` +
                     `${note ? " note=" + JSON.stringify(note) : ""}${errors.length ? " page errors: " + errors.join(" | ") : ""}`);
         await page.close();
       }

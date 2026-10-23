@@ -1,0 +1,23 @@
+/* tools_merge (operator 2026-10-23): the typed-words box and the Price check row, in ReviewMeta's style. */
+.words-box{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:5px;padding:18px 20px;text-align:left;box-shadow:0 6px 22px #0005}
+.words-title{margin:0 0 12px;font-size:17px}
+.words-buttons{display:flex;flex-wrap:wrap;gap:10px}
+.words-discounts{display:inline-block;min-height:50px;padding:14px 22px;border-radius:5px;background:#1d5796;color:#fff;font-weight:700;font-size:16px;line-height:1.25;text-decoration:none;text-align:center;overflow-wrap:anywhere}
+.words-discounts:hover{background:#17477d}
+.words-box .name-button{font-size:16px;border-radius:5px}
+.words-box .name-hint{color:var(--muted);margin:12px 0 0}
+.words-deals h3{font-size:15px;margin:18px 0 10px}
+.words-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.words-deal{display:flex;flex-direction:column;gap:3px;border:1px solid var(--line);border-radius:4px;padding:8px;text-decoration:none;color:var(--ink);font-size:13px;min-width:0}
+.words-deal img,.words-photo{display:block;width:100%;height:88px;object-fit:contain;background:#fff}
+.words-deal-title{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.4;color:var(--deep)}
+.words-deal strong{font-size:15px}
+.words-deal-cta{font-size:12px;font-weight:700;color:var(--deep)}
+.price-check td.price-grade{width:52px;font-size:22px;font-weight:700;text-align:center;vertical-align:middle;color:#fff}
+.price-check td.price-grade[data-grade="A"]{background:#13804a}
+.price-check td.price-grade[data-grade="B"]{background:#f2b100;color:#241900}
+.price-check td.price-grade[data-grade="C"]{background:#646c7c}
+.price-check a{display:inline-flex;align-items:center;min-height:36px;font-size:14px;font-weight:700}
+.price-check-link{font-weight:700;margin:0 0 20px}
+.price-check-link a{display:inline-flex;align-items:center;min-height:44px}
+@media(max-width:700px){.words-box{padding:14px}.words-buttons{flex-direction:column}.words-discounts,.words-box .name-button{width:100%}.words-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.price-check td.price-grade{width:40px;font-size:18px}}

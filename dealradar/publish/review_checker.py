@@ -7,7 +7,7 @@ from html import escape
 from pathlib import Path
 
 from ..config import validated_review_checker
-from . import amazon_as_of, deal_spotter, search_boost, seo, tool_pages, tracking
+from . import amazon_as_of, deal_spotter, search_boost, seo, tool_pages, tools_merge, tracking
 
 TEMPLATES = Path(__file__).with_name("templates")
 PATHS = ("/review-checker/", "/reviewmeta-alternative/")
@@ -62,10 +62,12 @@ def script(cfg):
                 "disclaimer": amazon_as_of.DISCLAIMER, "spotter": spotter_on(cfg),
                 "exclude": search_boost.adult_pattern(cfg.search_boost["exclude_words"])}
     # A typed name uses the checker's own word cleaning and adult filter (no lookup).
-    names = deal_spotter.shared_functions(tool_pages.script(cfg), ("toolQuery", "searchAmazonQuery", "analyzeAdult"))
-    return ('"use strict";\nvar toolSettings=' + json.dumps(settings).replace("<", "\\u003c") + ';\n'
-            + shared + '\n' + '\n'.join([deal_spotter.EXCLUDE, *names, (TEMPLATES / "tool-name-panel.js").read_text()])
-            + (TEMPLATES / "review-checker.js").read_text())
+    source = tool_pages.script(cfg)
+    names = deal_spotter.shared_functions(source, ("toolQuery", "searchAmazonQuery", "analyzeAdult"))
+    script = ('"use strict";\nvar toolSettings=' + json.dumps(settings).replace("<", "\\u003c") + ';\n'
+              + shared + '\n' + '\n'.join([deal_spotter.EXCLUDE, *names, (TEMPLATES / "tool-name-panel.js").read_text()])
+              + (TEMPLATES / "review-checker.js").read_text())
+    return tools_merge.review_script(script, source) if tools_merge.enabled(cfg) else script
 
 
 def _asin(row):
@@ -124,14 +126,17 @@ def publish(out, cfg, now, site_url, disclosure):
               and not any(d.get(k) for k in ("price_aged", "click_price_unknown"))]
     stores = {d["store"].casefold() for d in live if d.get("store")}
     assets = {}
-    for suffix, content in (("js", script(cfg)), ("css", (TEMPLATES / "review-checker.css").read_text())):
+    merged = tools_merge.enabled(cfg)
+    css = (TEMPLATES / "review-checker.css").read_text() + (tools_merge.REVIEW_CSS if merged else '')
+    for suffix, content in (("js", script(cfg)), ("css", css)):
         (out / ("review-checker." + suffix)).write_text(content)
         assets[suffix] = hashlib.sha256(content.encode()).hexdigest()[:12]
     # Deal Spotter ships separately; never link to it while it is OFF.
+    # tools_merge: menus name the two tools; the old addresses are keyword landing pages.
     nav = ''.join(f'<a href="{url}">{escape(label)}</a>' for url, label in NAV
-                  if url != "/deal-spotter/" or spotter_on(cfg))
+                  if (url != "/deal-spotter/" or spotter_on(cfg)) and (not merged or tools_merge.keep(url)))
     nav_row = ''.join(f'<a href="{url}">{escape(label)}</a>' for url, label in NAV_ROW
-                      if url != "/deal-spotter/" or spotter_on(cfg))
+                      if (url != "/deal-spotter/" or spotter_on(cfg)) and (not merged or tools_merge.keep(url)))
     faq = ''.join(f'<details><summary>{escape(q)}</summary><p>{escape(a)}</p></details>' for q, a in FAQ)
     schema = seo._json_ld({"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [
         {"@type": "Question", "name": q, "acceptedAnswer": {"@type": "Answer", "text": a}} for q, a in FAQ]})
@@ -145,6 +150,8 @@ def publish(out, cfg, now, site_url, disclosure):
     if cfg.pwa_android["enabled"]:
         install_script += "\nif ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(function () {});"
     base = (TEMPLATES / "review-checker.html").read_text()
+    if merged:
+        base = tools_merge.review_template(base)
     for path in PATHS:
         alternative = path == PATHS[1]
         title = "ReviewMeta Alternative: Free Amazon Review Checker | wowpriced" if alternative else "Review Checker: Free Amazon Review Signals | wowpriced"

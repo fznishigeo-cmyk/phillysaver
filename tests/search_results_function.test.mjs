@@ -7,7 +7,7 @@ const productsSource = fs.readFileSync(new URL('../dealradar/publish/templates/s
 const productsURL = 'data:text/javascript;base64,' + Buffer.from(productsSource).toString('base64');
 const gradeSource = fs.readFileSync(new URL('../functions/api/deal-grade.js', import.meta.url), 'utf8');
 const gradeURL = 'data:text/javascript;base64,' + Buffer.from(gradeSource).toString('base64');
-const {gradeDeal, publishedDealPrice} = await import(gradeURL);
+const {gradeDeal, publishedDealPrice, avg90Change} = await import(gradeURL);
 const reviewSource = fs.readFileSync(new URL('../functions/api/review-grade.js', import.meta.url), 'utf8');
 const reviewURL = 'data:text/javascript;base64,' + Buffer.from(reviewSource).toString('base64');
 const source = fs.readFileSync(new URL('../functions/api/search.js', import.meta.url), 'utf8')
@@ -87,7 +87,9 @@ test('first-page facts have an exact public allowlist, current Buy Box price and
   const response = await run(' Cupping  SET '), result = await body(response);
   assert.equal(response.headers.get('Cache-Control'), 'no-store');
   assert.equal(result.items.length, 10);
-  assert.deepEqual(Object.keys(result.items[0]), ['asin','title','image','price_cents','as_of']);
+  // C16: a Buy Box price (Keepa type 18) without Amazon's item/shipping split says it includes shipping.
+  assert.deepEqual(Object.keys(result.items[0]), ['asin','title','image','price_cents','as_of','price_includes_shipping']);
+  assert.equal(result.items[0].price_includes_shipping, true);
   assert.equal(result.items[0].price_cents, 1399); assert.equal(result.items[0].as_of, new Date(now).toISOString());
   assert.equal(calls[0][0].searchParams.get('term'), 'cupping set');
   const output = JSON.stringify(result); assert(!output.includes(KEY));
@@ -110,6 +112,7 @@ test('Buy Box price reads as Amazon\'s item price plus shipping only when Keepa\
   Object.assign(p.stats, {buyBoxPrice:15384, buyBoxShipping:2515});
   let item = currentItems([p], now)[0];
   assert.deepEqual([item.price_cents, item.shipping_cents, item.list_price_cents], [15384, 2515, 24000]);
+  assert(!('price_includes_shipping' in item), 'split shown as item + shipping');
   assert.deepEqual(shippingTotal(item), {price_cents:17899, item_price_cents:15384});
   const grade = gradeDeal({...item, ...shippingTotal(item), avg90:20000}, DEAL_SETTINGS);
   assert.deepEqual([grade.grade, grade.facts], ['B', ['35% below the list price']]);
@@ -122,10 +125,12 @@ test('Buy Box price reads as Amazon\'s item price plus shipping only when Keepa\
     Object.assign(p.stats, {buyBoxPrice:price, buyBoxShipping:shipping});
     item = currentItems([p], now)[0];
     assert.deepEqual([item.price_cents, 'shipping_cents' in item], [17899, false]);
+    assert.equal(item.price_includes_shipping, true, 'no split: the Buy Box total says it includes shipping');
   }
   Object.assign(p.stats, {buyBoxPrice:15384, buyBoxShipping:2515}); p.stats.current[18] = -1; p.stats.current[1] = 17899;
   item = currentItems([p], now)[0];
   assert.deepEqual([item.price_cents, 'shipping_cents' in item], [17899, false]);  // no Buy Box, no split
+  assert(!('price_includes_shipping' in item), 'Amazon\'s own price (type 1) carries no shipping');
   for (const bad of [undefined, null, {}, {price_cents:'1'}]) assert.deepEqual(shippingTotal(bad), {});
 });
 test('new current fallback skips absent/invalid/stale prices and never falls back to averages', () => {
@@ -549,7 +554,7 @@ test('text, ASIN and every page return optional List Price and accept older cach
   for (const request of [() => run('kettle'), () => runAsin(), ...[0, 1, 2].map(page => () => runPage(page))]) {
     const first = await body(await request());
     assert.equal(first.items[0].list_price_cents, 1999);
-    assert.deepEqual(Object.keys(first.items[0]), ['asin', 'title', 'image', 'price_cents', 'as_of', 'list_price_cents']);
+    assert.deepEqual(Object.keys(first.items[0]), ['asin', 'title', 'image', 'price_cents', 'as_of', 'price_includes_shipping', 'list_price_cents']);
     assert.deepEqual(await body(await request()), first);
     now += 1100;
   }
@@ -1093,4 +1098,45 @@ test("a live refresh's extra token settles from Keepa's receipt", async () => {
     request:new Request('https://wowpriced.test/api/search?asin=' + p.asin + '&grade=deal')}));
   assert.equal(result.items[0].as_of, new Date(now).toISOString().slice(0, 17) + '00.000Z');
   assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, 2);
+});
+
+// tools_merge (operator 2026-10-23): the same lookups, no extra Keepa call.
+test('tools_merge: the deal grade adds the 90-day comparison only with the switch on', async () => {
+  const p = product(); p.stats.avg90[18] = 1520;  // today 1399: 7.96% below, shown as 7
+  const request = enableDealGrade(p);
+  const off = await body(await request('&grade=deal'));
+  assert(!Object.hasOwn(off.deal_grade, 'usual_pct'));
+  config.tools_merge = true; now += 1100;
+  const on = await body(await request('&grade=deal'));
+  assert.equal(on.deal_grade.usual_pct, -7); assert.equal(on.deal_grade.grade, off.deal_grade.grade);
+  assert.deepEqual(on.deal_grade.facts, off.deal_grade.facts);
+  for (const word of ['avg90', '_deal', '1520']) assert(!JSON.stringify(on).includes(word), word);
+  assert.equal(avg90Change(1399, 1520), -7); assert.equal(avg90Change(1640, 1520), 7);
+  assert.equal(avg90Change(1520, 1520), 0);
+  for (const bad of [[0, 1520], [1399, null], [1399, -1], ['1399', 1520], [1399, 15.5]]) assert.equal(avg90Change(...bad), null);
+});
+test('tools_merge: a review report carries the price grade from the same lookup, never its inputs', async () => {
+  config.review_checker = {...reviewConfig}; config.deal_spotter = {...DEAL_SETTINGS};
+  context.env.ASSETS.fetch = async req => Response.json(new URL(req.url).pathname === '/search-config.json' ? config : {deals:[]});
+  reviewUpstream();
+  const off = await body(await reviewRun());
+  assert(!Object.hasOwn(off, 'price_check')); assert.equal(calls.length, 1);
+  config.tools_merge = true; now += 1100;
+  const upstream = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    const response = await upstream(url, options), data = await response.json();
+    data.products[0].stats.avg90 = Array(19).fill(-1); data.products[0].stats.avg90[18] = 2000;
+    return Response.json(data);
+  };
+  const on = await body(await reviewRun());
+  assert.equal(calls.length, 2, 'one lookup per report, as before');
+  // 1399 against a 2000 average and a 2999 list price: A, 30% below.
+  assert.deepEqual(on.price_check, {grade:'A', label:'Great price', usual_pct:-30});
+  assert.deepEqual(Object.keys(on.items[0]), ['asin','title','image','price_cents','as_of']);
+  for (const word of ['_deal', 'avg90', '2999', 'list_price', 'price_includes_shipping']) assert(!JSON.stringify(on).includes(word), word);
+  assert.deepEqual(await body(await reviewRun()), on); assert.equal(calls.length, 2);
+  const cached = await [...cache.values()].at(-1).clone().json();
+  assert.equal(cached._deal.avg90, 2000); assert.equal(cached._deal.item.list_price_cents, 2999);
+  config.deal_spotter.enabled = false; now += 1100;
+  assert(!Object.hasOwn(await body(await reviewRun()), 'price_check'));
 });

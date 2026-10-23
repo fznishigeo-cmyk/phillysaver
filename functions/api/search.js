@@ -1,6 +1,6 @@
 // Pages Function: current US product facts only. Never log upstream URLs/errors.
 import {matchesSearch, searchWords} from "../../dealradar/publish/templates/search-products.js";
-import {gradeDeal, publishedDealPrice, validDealSettings} from "./deal-grade.js";
+import {avg90Change, gradeDeal, publishedDealPrice, validDealSettings} from "./deal-grade.js";
 import {validReviewSettings, reviewResponse} from "./review-grade.js";
 
 const RESERVATION = 110; // each search page (10) + up to 100 product tokens
@@ -148,6 +148,10 @@ export function currentItems(products, now = Date.now(), includeMonthlySold = tr
         shipping >= 0 && itemPrice + shipping === price) {
       item.price_cents = itemPrice;
       if (shipping > 0) item.shipping_cents = shipping;
+    } else if (buybox) {
+      // Without that split (single-ASIN lookups skip buybox=1: +2 tokens), Keepa's type 18
+      // is still the Buy Box price including shipping: say so (C16, B07RFNZYJZ $178.99).
+      item.price_includes_shipping = true;
     }
     if (Number.isSafeInteger(current[4]) && current[4] > item.price_cents) item.list_price_cents = current[4];
     if (includeMonthlySold && Number.isSafeInteger(p.monthlySold) && p.monthlySold > 0) item.monthlySold = p.monthlySold;
@@ -263,16 +267,22 @@ export async function onRequest(context) {
     async function respond(body) {
       // Never serialize private cache inputs, even for a normal checker request.
       const {_deal, ...publicBody} = body;
-      if (dealGrade) {
+      // tools_merge: a Review Checker report also carries the price grade, from the same lookup.
+      const priceCheck = reviews && cfg.tools_merge === true && validDealSettings(cfg.deal_spotter) && _deal?.item;
+      if (dealGrade || priceCheck) {
         let verified;
         try {
           // A slim copy of deals.json (Python deal_spotter.price_index): the full file is too big to parse per request.
           const response = await env.ASSETS.fetch(new Request(new URL('/deal-spotter-prices.json', request.url)));
           if (response.ok) verified = publishedDealPrice(await response.json(), asin);
         } catch (_) { /* Missing inventory cannot confer verified status. */ }
-        const first = publicBody.items?.[0];
-        publicBody.deal_grade = gradeDeal({...first, ...shippingTotal(first), avg90:_deal?.avg90,
+        const first = dealGrade ? publicBody.items?.[0] : _deal.item, total = shippingTotal(first);
+        const grade = gradeDeal({...first, ...total, avg90:_deal?.avg90,
           verified_price_cents:verified}, cfg.deal_spotter);
+        const change = cfg.tools_merge === true ? avg90Change(total.price_cents, _deal?.avg90) : null;
+        if (change !== null) grade.usual_pct = change;
+        if (dealGrade) publicBody.deal_grade = grade;
+        else publicBody.price_check = {grade:grade.grade, label:grade.label, ...(change !== null ? {usual_pct:change} : {})};
       }
       return json(publicBody);
     }
@@ -342,15 +352,21 @@ export async function onRequest(context) {
       : currentItems(asin ? data.products.filter(p => p && p.asin === asin) : data.products, checkedNow, cfg.analyze_top_sellers === true)};
     // Task 366: capture only the matching series' average in the edge cache.
     // stats=1 is unchanged; use avg90 when supplied, with no added token cost.
-    if (asin && !reviews && validDealSettings(cfg.deal_spotter) && body.items.length) {
+    // tools_merge: the review lookup's own stats carry the same average (no added token cost).
+    if (asin && (!reviews || cfg.tools_merge === true) && validDealSettings(cfg.deal_spotter) && body.items.length) {
       const p = data.products.find(p => p?.asin === asin), current = p.stats.current;
       const buybox = p.stats.buyBoxIsUnqualified !== true && Number.isSafeInteger(current[18]) &&
         current[18] > 0 && stamp(p.stats.lastBuyBoxUpdate, checkedNow);
       const avg90 = p.stats.avg90?.[buybox ? 18 : 1];
       body._deal = {avg90:Number.isSafeInteger(avg90) && avg90 > 0 ? avg90 : null};
+      if (reviews) {
+        // The review report's allowlist drops these; they stay in the private cache input only.
+        const {price_cents, shipping_cents, list_price_cents} = body.items[0];
+        body._deal.item = {price_cents, ...(shipping_cents ? {shipping_cents} : {}), ...(list_price_cents ? {list_price_cents} : {})};
+      }
     }
     // Task 367 — only the safe report plus current product facts reach cache/browser.
-    if (reviews) body = reviewResponse(data.products, body.items, asin, cfg.review_checker);
+    if (reviews) body = {...reviewResponse(data.products, body.items, asin, cfg.review_checker), ...(body._deal ? {_deal:body._deal} : {})};
     const ttl = Math.floor(Math.min(cfg.cache_hours * 3600, ...body.items.map(
       item => item.as_of ? (Date.parse(item.as_of) + 86400000 - Date.now()) / 1000 : cfg.cache_hours * 3600)));
     if (cache && ttl > 0) {

@@ -167,7 +167,8 @@ def test_off_missing_and_back_to_off_are_byte_identical(tmp_path, monkeypatch):
     changed = {name for name in on.keys() | off.keys() if on.get(name) != off.get(name)}
     deal_pages = {name for name in changed if name.startswith('deal/')}
     assert len(deal_pages) == 3 and changed - deal_pages == {
-        'deal-spotter/index.html', 'deal-spotter.js', 'fakespot-alternative/index.html'}
+        'deal-spotter/index.html', 'deal-spotter.js', 'fakespot-alternative/index.html'} | (
+        {'amazon-deal-checker/index.html', 'amazon-discount-finder/index.html'} if cfg.tools_merge else set())  # the same tool there
     # The alternative page only loads the new script version.
     version = re.compile(rb'deal-spotter\.js\?v=[0-9a-f]{12}')
     assert version.sub(b'', on['fakespot-alternative/index.html']) == version.sub(b'', off['fakespot-alternative/index.html'])

@@ -179,6 +179,7 @@ def test_gauge_python_js_parity_and_thresholds(tmp_path):
 
 def test_lazy_dialog_shared_card_endpoints_and_header_scope(tmp_path):
     cfg = load_config()
+    cfg.tools_merge = False  # the old tool pages carry the Join card; tools_merge has its own test
     out, *_ = render(tmp_path, cfg)
     payload = json.loads((out / 'join-dialog.json').read_text())['html']
     page = Page(payload, '/join-dialog')

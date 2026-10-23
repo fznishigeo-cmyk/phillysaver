@@ -9,7 +9,7 @@ import pytest
 from dealradar.config import AppConfig, load_config, validated_deal_spotter
 from dealradar.publish import deal_spotter, site
 from dealradar.publish.seo_audit import Page
-from tests.history_pins import pre_deal_spotter, pre_review_checker
+from tests.history_pins import pre_deal_spotter, pre_review_checker, pre_tools_merge
 from tests.test_home_comment_strip import files
 from tests.test_pwa import tree_hash
 from tests.test_support import NOW, render
@@ -68,7 +68,7 @@ def test_off_missing_back_to_off_bytes_and_idempotence(tmp_path, mode, expected)
 
 
 def test_both_pages_metadata_schema_copy_assets_and_menu(tmp_path):
-    out, *_ = render(tmp_path, load_config())
+    out, *_ = render(tmp_path, pre_tools_merge(load_config()))  # the merged pages: test_tools_merge
     sitemap = ''.join(path.read_text() for path in out.glob('sitemap*.xml'))
     for slug in deal_spotter.SLUGS:
         html = (out / slug / 'index.html').read_text()
@@ -163,6 +163,7 @@ def test_prices_file_is_published_on_and_removed_off(tmp_path, monkeypatch):
 
 def test_emitted_javascript_parsing_and_shared_links(tmp_path):
     cfg = load_config(); cfg.affiliate_amazon_tag='example-20'
+    cfg.tools_merge = False  # this harness drives the pre-merge page; the merged script: test_tools_merge
     path = tmp_path / 'deal-spotter.js'; path.write_text(deal_spotter.script(cfg))
     for args in (['node','--check',str(path)],['node','tests/deal_spotter_logic.cjs',str(path)],
                  ['node','--check','tests/deal_spotter_browser.cjs']):
@@ -219,7 +220,8 @@ def test_store_row_names_only_stores_in_todays_deals():
 def test_footer_icons_are_real_marks_and_only_for_configured_profiles(tmp_path):
     # Operator 2026-10-22: the text glyphs "didn't work and looked fake"; never show an unlinked icon.
     for name, profiles in (('none', {}), ('facebook', {'facebook': 'https://www.facebook.com/Wowpriced'})):
-        cfg = load_config(); cfg.social_profiles = profiles; (tmp_path / name).mkdir()
+        cfg = load_config(); cfg.social_profiles = profiles; cfg.tools_merge = False  # the merged footer: test_tools_merge
+        (tmp_path / name).mkdir()
         out, *_ = render(tmp_path / name, cfg)
         for page in ('deal-spotter', 'review-checker'):
             html = (out / page / 'index.html').read_text()

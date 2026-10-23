@@ -130,6 +130,14 @@ def publish(out, cfg, now, site_url, disclosure, rows=()):
         (out / name).unlink(missing_ok=True)
     if not settings.get("enabled"):
         return []
+    from . import tools_merge
+    if tools_merge.enabled(cfg):
+        # Operator 2026-10-23: the same addresses become keyword landing pages for the
+        # Fake Deal Spotter (deal_spotter.publish writes them); footer and sitemap stay.
+        if settings.get("public"):
+            footer_links(out)
+            return ["/" + slug + "/" for slug in PAGES]
+        return []
     css, js = (TEMPLATES / "tool-pages.css").read_text(), script(cfg)
     if tool_pages_1020.enabled(cfg) or tool_hero.enabled(cfg):
         css += (TEMPLATES / ("tool-hero-1020.css" if tool_pages_1020.enabled(cfg) else "tool-hero.css")).read_text()
