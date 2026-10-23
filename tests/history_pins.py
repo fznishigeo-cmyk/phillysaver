@@ -451,6 +451,7 @@ def pre_task_319_raw(config):
     config.pop("hide_timer_ticker_confetti", None)
     config.pop("sticky_buy_bar", None)
     config.pop("tools_merge", None)
+    config.pop("tool_words_analyzer", None)
     config.pop("soft_buttons", None)
     config.pop("keep_first_cards", None)
     config.pop("price_shipping_note", None)
@@ -537,6 +538,7 @@ def pre_hide_deal_site_links_raw(config):
     config.pop("hide_timer_ticker_confetti", None)
     config.pop("sticky_buy_bar", None)
     config.pop("tools_merge", None)
+    config.pop("tool_words_analyzer", None)
     config.pop("soft_buttons", None)
     config.pop("keep_first_cards", None)
     config.pop("price_shipping_note", None)
@@ -561,6 +563,7 @@ def pre_keepa_focus_finder_raw(config):
     config.pop("hide_timer_ticker_confetti", None)
     config.pop("sticky_buy_bar", None)
     config.pop("tools_merge", None)
+    config.pop("tool_words_analyzer", None)
     config.pop("soft_buttons", None)
     config.pop("keep_first_cards", None)
     config.pop("price_shipping_note", None)
@@ -643,6 +646,7 @@ def pre_keepa_starter_raw(config):
     config.pop("hide_timer_ticker_confetti", None)
     config.pop("sticky_buy_bar", None)
     config.pop("tools_merge", None)
+    config.pop("tool_words_analyzer", None)
     config.pop("soft_buttons", None)
     config.pop("keep_first_cards", None)
     config.pop("price_shipping_note", None)
@@ -713,6 +717,7 @@ def pre_social_profiles(cfg):
     pre_add_to_cart(cfg)
     pre_front_mix(cfg)
     pre_tools_merge(cfg)
+    pre_tool_words_analyzer(cfg)
     pre_soft_buttons(cfg)
     pre_keep_first_cards(cfg)
     return cfg
@@ -721,6 +726,12 @@ def pre_social_profiles(cfg):
 def pre_tools_merge(cfg):
     """Before Deal Checker and Discount Finder folded into the two tools (operator 2026-10-23)."""
     cfg.tools_merge = False
+    return cfg
+
+
+def pre_tool_words_analyzer(cfg):
+    """Before typed words waited through the link's analyzer box (operator 2026-10-23 ~20:05Z)."""
+    cfg.tool_words_analyzer = False
     return cfg
 
 

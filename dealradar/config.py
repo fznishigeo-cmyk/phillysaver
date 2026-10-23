@@ -421,6 +421,7 @@ class AppConfig:
     hide_timer_ticker_confetti: bool = False
     sticky_buy_bar: bool = False
     tools_merge: bool = False          # Deal Checker + Discount Finder fold into the two Fakespot/ReviewMeta tools
+    tool_words_analyzer: bool = False  # typed words wait through the link's analyzer box (tools_merge)
     soft_buttons: bool = False         # the two search buttons a little less bright
     tagline_full_row: bool = False
     price_shipping_note: bool = False
@@ -1303,6 +1304,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.tools_merge = g("tools_merge", default=False)
     if type(cfg.tools_merge) is not bool:
         raise ValueError("tools_merge must be a boolean")
+    cfg.tool_words_analyzer = g("tool_words_analyzer", default=False)
+    if type(cfg.tool_words_analyzer) is not bool:
+        raise ValueError("tool_words_analyzer must be a boolean")
     cfg.soft_buttons = g("soft_buttons", default=False)
     if type(cfg.soft_buttons) is not bool:
         raise ValueError("soft_buttons must be a boolean")

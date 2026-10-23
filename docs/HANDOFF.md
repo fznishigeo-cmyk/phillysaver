@@ -289,6 +289,21 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   (/review-checker/?q=); events unchanged per slot plus `tool`. The live
   site check takes the merged path when config.yaml says so. Pins:
   `pre_tools_merge` (+ raw pops). Ads final URL stays /amazon-deal-checker/.
+- **Typed words wait through the analyzer (2026-10-23 ~20:05Z; ON, branch
+  `words-analyzer`):** operator "both products, no matter if they search a
+  keyword or a url should go through the analzyer process", then ~20:10Z "no
+  this will still come up. just make them wait for it". `tool_words_analyzer:
+  true` (strict bool, default false; needs tools_merge; `publish/words_analyzer.py`,
+  templates `tool-words-analyzer*.js`). On both tools typed words open the
+  link's analyzer box (same look, ×, focus, the spotter's recommends strip)
+  for the link's wait (10-25 s), status "Searching for deals, please wait.."
+  and steps Searching our verified deals / Finding discounts on Amazon /
+  Finding top-rated picks, then today's words box unchanged. Still no
+  /api/search call; adult words: no box, no analyzer; × = no box (as a link).
+  No new GA4 event (the link flow has no open/complete event). The Discount
+  Finder intro drops "so the buttons appear right away". The live site check
+  waits 40 s for the words box (was 20 s). Pins: `pre_tool_words_analyzer`
+  (+ raw pops). Tests: `tests/test_words_analyzer.py` (+ `words_analyzer_browser.cjs`).
 - **Softer search buttons (2026-10-23; ON):** `soft_buttons: true`
   (`publish/soft_buttons.py`): same hues ~15% less saturated, 6% darker,
   glows 40% weaker: the --pill-colors/--pill-glow values are rewritten in

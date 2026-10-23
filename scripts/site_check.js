@@ -165,7 +165,8 @@ async function checkTools(page, tag) {
 // tools_merge (operator 2026-10-23): the homepage buttons open Fake Deal Spotter (blue) and
 // Review Checker (purple) with the typed words; the Deal Checker and Discount Finder
 // addresses are keyword landing pages for the spotter. Typed words open the discounts
-// box there without a lookup, so the run spends no Keepa tokens.
+// box there without a lookup, so the run spends no Keepa tokens; with tool_words_analyzer
+// the box opens after the analyzer's 10-25 s wait.
 async function checkMergedTools(page, tag) {
   const started = Date.now(), words = "cupping set", query = "?q=" + encodeURIComponent(words);
   const ownSiteOnly = route => new URL(route.request().url()).origin === SITE_URL.origin
@@ -189,7 +190,7 @@ async function checkMergedTools(page, tag) {
       check(response && response.status() === 200, `${slug} HTTP ${response && response.status()}`);
       check(await page.locator("#q").inputValue() === words, `${slug} did not fill query`);
       const discounts = page.locator("#name-results .words-discounts");
-      await discounts.waitFor({ state: "visible", timeout: 20000 });
+      await discounts.waitFor({ state: "visible", timeout: 40000 });
       const result = checkToolAmazonUrl(await discounts.getAttribute("href"), tag, true);
       check(result.ok, `${slug}: ${result.reason}`);
       const rated = checkToolAmazonUrl(await page.locator("#name-results .name-button").getAttribute("href"), tag);
