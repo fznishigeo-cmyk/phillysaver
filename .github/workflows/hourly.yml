@@ -53,6 +53,11 @@ jobs:
         id: restore
         env:
           STATE_DB_KEY: ${{ secrets.STATE_DB_KEY }}
+          # Read only when the data branch holds an R2 pointer (state.r2_primary).
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: bash scripts/restore_state.sh
 
       - name: Guard Google Ads spending
@@ -78,6 +83,11 @@ jobs:
         id: pipeline
         env:
           STATE_DB_KEY: ${{ secrets.STATE_DB_KEY }}
+          # Pre-send state checkpoints run commit_state.sh (state.r2_primary).
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
           DEALS_CLAUDE_API_KEY: ${{ secrets.DEALS_CLAUDE_API_KEY }}
           REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
           REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
@@ -171,6 +181,11 @@ jobs:
         continue-on-error: true
         env:
           STATE_DB_KEY: ${{ secrets.STATE_DB_KEY }}
+          # Pre-send state checkpoints run commit_state.sh (state.r2_primary).
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: python -m dealradar indexnow --deployed --run-key "$DEALRADAR_RUN_KEY"
 
       - name: Commit IndexNow receipts to data branch
@@ -189,6 +204,11 @@ jobs:
         continue-on-error: true
         env:
           STATE_DB_KEY: ${{ secrets.STATE_DB_KEY }}
+          # Pre-send state checkpoints run commit_state.sh (state.r2_primary).
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
           PINTEREST_APP_ID: ${{ secrets.PINTEREST_APP_ID }}
           PINTEREST_APP_SECRET: ${{ secrets.PINTEREST_APP_SECRET }}
         run: python -m dealradar pinterest-post
@@ -198,6 +218,11 @@ jobs:
         continue-on-error: true
         env:
           STATE_DB_KEY: ${{ secrets.STATE_DB_KEY }}
+          # Pre-send state checkpoints run commit_state.sh (state.r2_primary).
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
           META_SYSTEM_TOKEN: ${{ secrets.META_SYSTEM_TOKEN }}
         run: python -m dealradar meta-post
 

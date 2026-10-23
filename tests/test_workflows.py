@@ -68,18 +68,18 @@ def run_commands(doc: dict) -> list[str]:
 
 
 STATE_KEY = {"STATE_DB_KEY": "${{ secrets.STATE_DB_KEY }}"}
-# Copy mode (2026-10-22): the hourly and fast-lane saves also copy to Cloudflare R2.
-R2_SAVE = {**STATE_KEY, **{name: "${{ secrets.%s }}" % name for name in
-                         ("R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_ENDPOINT", "R2_BUCKET")}}
+# R2 (copy mode 2026-10-22, R2 primary behind state.r2_primary): every state
+# step (restore, save, pre-send checkpoint) also gets the four R2 secrets.
+R2_NAMES = ("R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_ENDPOINT", "R2_BUCKET")
+R2_SAVE = {**STATE_KEY, **{name: "${{ secrets.%s }}" % name for name in R2_NAMES}}
 
 
-def assert_state_steps_get_the_key(steps: list[dict], r2: bool = False) -> None:
-    """Restore and commit both see STATE_DB_KEY (decrypt / encrypt state.db);
-    the pipeline step does not need it. Lanes with R2 copy mode also pass the
-    R2 secrets to every save (never to restore)."""
+def assert_state_steps_get_the_key(steps: list[dict]) -> None:
+    """Restore and commit both see STATE_DB_KEY (decrypt / encrypt state.db)
+    plus the R2 secrets (R2 primary: upload first / follow the pointer)."""
     for script in ("restore_state.sh", "commit_state.sh"):
         for step in (s for s in steps if script in s.get("run", "")):
-            assert step["env"] == (R2_SAVE if r2 and script == "commit_state.sh" else STATE_KEY)
+            assert step["env"] == R2_SAVE
 
 
 def assert_cloudflare_is_the_only_host(doc: dict) -> None:
@@ -198,12 +198,12 @@ def test_hourly_shape() -> None:
     assert any(r.strip() == "bash scripts/restore_state.sh" for r in runs)
     assert any(r.strip() == "python -m dealradar run" for r in runs)
     assert any("bash scripts/commit_state.sh" in r for r in runs)
-    assert_state_steps_get_the_key(steps, r2=True)
+    assert_state_steps_get_the_key(steps)
 
     assert_cloudflare_is_the_only_host(doc)
 
     run_step = next(s for s in steps if s.get("run", "").strip() == "python -m dealradar run")
-    assert set(run_step["env"]) == set(SECRET_NAMES + ["STATE_DB_KEY"])
+    assert set(run_step["env"]) == set(SECRET_NAMES + ["STATE_DB_KEY", *R2_NAMES])
     # The operator saved the Sovrn link key as SOVRN_API_KEY2 (2026-10-12).
     renamed = {"SOVRN_API_KEY": "${{ secrets.SOVRN_API_KEY2 || secrets.SOVRN_API_KEY }}"}
     for name, value in run_step["env"].items():
@@ -235,7 +235,7 @@ def test_pinterest_connect_masks_code_and_serializes_encrypted_state(tmp_path):
                    "PINTEREST_APP_ID": "${{ secrets.PINTEREST_APP_ID }}",
                    "PINTEREST_APP_SECRET": "${{ secrets.PINTEREST_APP_SECRET }}"}
     assert {key for s in steps for key in s.get("env", {})} == {
-        "PINTEREST_CODE", "PINTEREST_APP_ID", "PINTEREST_APP_SECRET", "STATE_DB_KEY"}
+        "PINTEREST_CODE", "PINTEREST_APP_ID", "PINTEREST_APP_SECRET", "STATE_DB_KEY", *R2_NAMES}
     checkout = next(s for s in steps if s.get("uses", "").startswith("actions/checkout@"))
     assert checkout["with"]["fetch-depth"] == 0
     # Nothing interpolates the code into a command or an unmasked env listing.
@@ -256,12 +256,12 @@ def test_hourly_pinterest_after_deploy_and_state_committed_even_after_failure():
     assert steps[post]["id"] == "pinterest"
     assert steps[post]["env"] == {"PINTEREST_APP_ID": "${{ secrets.PINTEREST_APP_ID }}",
                                    "PINTEREST_APP_SECRET": "${{ secrets.PINTEREST_APP_SECRET }}",
-                                   "STATE_DB_KEY": "${{ secrets.STATE_DB_KEY }}"}
+                                   **R2_SAVE}
     meta = steps[post + 1]
     assert meta == {
         "name": "Post top deals to Facebook and Instagram", "id": "meta",
         "continue-on-error": True, "env": {"META_SYSTEM_TOKEN": "${{ secrets.META_SYSTEM_TOKEN }}",
-                                         "STATE_DB_KEY": "${{ secrets.STATE_DB_KEY }}"},
+                                         **R2_SAVE},
         "run": "python -m dealradar meta-post",
     }
     commit = steps[post + 2]
@@ -295,7 +295,7 @@ def test_fast_shape() -> None:
     assert any(r.strip() == "python -m dealradar run --fast-lane" for r in runs)
     assert any(r.strip() == "bash scripts/restore_state.sh" for r in runs)
     assert any("bash scripts/commit_state.sh" in r for r in runs)
-    assert_state_steps_get_the_key(job["steps"], r2=True)
+    assert_state_steps_get_the_key(job["steps"])
 
     # The fast lane deploys the site too: a 15-minute-lane find (Keepa price
     # drop) must reach the page in minutes, not wait for the hourly deploy.
@@ -303,7 +303,7 @@ def test_fast_shape() -> None:
 
     run_step = next(s for s in job["steps"]
                     if s.get("run", "").strip() == "python -m dealradar run --fast-lane")
-    assert set(run_step["env"]) == set(SECRET_NAMES + ["STATE_DB_KEY"])
+    assert set(run_step["env"]) == set(SECRET_NAMES + ["STATE_DB_KEY", *R2_NAMES])
 
 
 @pytest.mark.parametrize("path", [HOURLY, FAST])
@@ -311,7 +311,7 @@ def test_indexnow_step_runs_after_every_deploy_and_never_fails_the_run(path: Pat
     steps = single_job(load_workflow(path))["steps"]
     step = next(s for s in steps if s.get("id") == "indexnow")
     assert step["continue-on-error"] is True
-    assert step["env"] == {"STATE_DB_KEY": "${{ secrets.STATE_DB_KEY }}"}
+    assert step["env"] == R2_SAVE
     assert step["run"] == 'python -m dealradar indexnow --deployed --run-key "$DEALRADAR_RUN_KEY"'
     assert step["if"] == ("${{ success() && steps.pipeline.outcome == 'success' "
                           "&& steps.deploy.outcome == 'success' }}")
@@ -399,7 +399,7 @@ def test_growth_report_shape() -> None:
     for banned in ("commit_state", "git push", "GITHUB_STEP_SUMMARY", "echo"):
         assert banned not in body, banned
     restore = next(s for s in job["steps"] if s.get("run") == "bash scripts/restore_state.sh")
-    assert restore["env"] == {"STATE_DB_KEY": "${{ secrets.STATE_DB_KEY }}"}
+    assert restore["env"] == R2_SAVE
     step = next(s for s in job["steps"] if s.get("run", "").strip() == (
         "python -m dealradar growth-report${{ inputs.copy_only && ' --copy-only' || '' }}"))
     assert set(step["env"]) == {
@@ -510,6 +510,30 @@ def test_deploy_subscribe_worker_warns_without_portal_link(tmp_path: Path, porta
 
 
 # ------------------------------------------------------------------- safety
+
+
+def test_every_state_step_in_every_workflow_gets_the_r2_secrets() -> None:
+    """R2 primary (state.r2_primary): a restore must be able to follow an R2
+    pointer and a save (pre-send checkpoints included: DEALRADAR_DURABLE_STATE
+    plus STATE_DB_KEY run commit_state.sh) must upload first, or they refuse.
+    Applies to every workflow file, so a new one cannot forget it; the R2
+    secrets go nowhere else."""
+    found = 0
+    for path in sorted(WORKFLOWS.glob("*.y*ml")):
+        doc = load_workflow(path)
+        for job in doc.get("jobs", {}).values():
+            for step in job.get("steps", []):
+                env = {**(doc.get("env") or {}), **(job.get("env") or {}), **(step.get("env") or {})}
+                run = step.get("run", "")
+                state = ("restore_state.sh" in run or "commit_state.sh" in run
+                         or (env.get("DEALRADAR_DURABLE_STATE") == "1" and "STATE_DB_KEY" in env))
+                if state:
+                    found += 1
+                    for name in ("STATE_DB_KEY", *R2_NAMES):
+                        assert env.get(name) == "${{ secrets.%s }}" % name, (path.name, step.get("name"), name)
+                elif any(name in env for name in R2_NAMES):
+                    assert "STATE_DB_KEY" in env and "r2_copy.sh" in run, (path.name, step.get("name"))
+    assert found >= 20
 
 
 def test_no_workflow_pushes_to_main() -> None:
