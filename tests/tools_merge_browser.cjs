@@ -78,10 +78,10 @@ async function contrastAudit(page, scope) {
               price_cents:4699, list_price_cents:5999, monthlySold:1000, category:'Over-Ear Headphones',
               as_of:new Date(NOW.getTime() - 4 * 60000).toISOString(), ...(state.included ? {price_includes_shipping:true} : {})};
             const body = kind === 'deal' ? {items:[item], deal_grade:{grade:state.grade, label:{A:'Great price', B:'Good price', C:'Fair price'}[state.grade],
-              facts:['21% below the list price', 'Verified deal on wowpriced'], usual_pct:-8}} :
+              facts:['21% below the list price', 'Verified deal on wowpriced']}} :
               {items:[{asin, title:item.title, image:item.image, price_cents:item.price_cents, as_of:item.as_of}],
                review:{grade:'A', label:'Great — a strong set of review signals', checks:[{id:'highly_rated', title:'Highly rated', result:'A warm reception.', detail:'Detail.'}]},
-               ...(state.priceCheck ? {price_check:{grade:'B', label:'Good price', usual_pct:-8}} : {})};
+               ...(state.priceCheck ? {price_check:{grade:'B', label:'Good price'}} : {})};
             return route.fulfill({contentType:'application/json', body:JSON.stringify(body)});
           }
           let file = path.join(root, url.pathname);
@@ -119,7 +119,7 @@ async function contrastAudit(page, scope) {
         // Spotter home: the guide tabs, the Love button and the footer columns.
         await page.goto('https://wowpriced.test/deal-spotter/'); await page.clock.runFor(500);
         const tabs = page.locator('.guide-tabs [role="tab"]');
-        assert.deepEqual(await tabs.allInnerTexts(), ['Price grade', '90-day price history', 'Price details', 'Find discounts']);
+        assert.deepEqual(await tabs.allInnerTexts(), ['Price grade', 'Verified deals', 'Price details', 'Find discounts']);
         await tabs.nth(1).click(); assert(await page.locator('#gpanel-1').isVisible()); assert(await page.locator('#gpanel-0').isHidden());
         await page.keyboard.press('ArrowRight'); assert.equal(await page.evaluate(() => document.activeElement.id), 'gtab-2');
         assert(await page.locator('#gpanel-2').isVisible());
@@ -162,14 +162,14 @@ async function contrastAudit(page, scope) {
         assert.equal(await page.locator('#report-category').textContent(), 'Over-Ear Headphones');
         assert.equal(await page.locator('#result-list').textContent(), 'Amazon list price: $59.99');
         assert.deepEqual(await page.locator('#result-facts li').allInnerTexts(),
-          ['8% below its 90-day average price', 'A verified deal on wowpriced', 'Popular: 1K+ bought in past month']);
+          ['A verified deal on wowpriced', 'Popular: 1K+ bought in past month']);
         await page.locator('#report-ours .ours-line').waitFor();
         assert.match(await page.locator('#report-ours').innerText(), /Verified deal\s+\$21\.00 on wowpriced/);
         assert.match(await page.locator('#report-ours a').getAttribute('href'), /^\/deal\/[a-z0-9-]+\/$/);
         assert.match(await page.locator('#result-similar').getAttribute('href'), /^https:\/\/www\.amazon\.com\/s\?k=.*tag=wowpriced-20$/);
         assert.equal(await page.locator('#review-link').getAttribute('href'), '/review-checker/?asin=' + ASIN);
         const report = await page.locator('#spotter-result').innerText();
-        assert(!/% off|Price history|★|\b\d[\d,]* (?:ratings|reviews)\b/i.test(report), 'no second verdict, stars or counts');
+        assert(!/% off|price history|90-day|usual price|average price|★|\b\d[\d,]* (?:ratings|reviews)\b/i.test(report), 'no second verdict, past prices, stars or counts');
         assert.equal(await page.locator('.grade-letter').count(), 1);
         assert.match(page.url(), /\/deal-spotter\/\?asin=B0MERGE001$/);
         await page.locator('.grade-help summary').click(); assert(await page.locator('.grade-help').evaluate(el => el.open));
@@ -216,7 +216,7 @@ async function contrastAudit(page, scope) {
         assert.equal(calls.length, 0); await contrastAudit(page, '#name-results'); await noScroll(); await shot('review-words');
         await page.goto('https://wowpriced.test/review-checker/?asin=' + ASIN); await page.clock.runFor(10100);
         await page.locator('#review-report').waitFor();
-        assert.equal(await page.locator('.price-check h3').textContent(), 'Price check: B — 8% below its usual price');
+        assert.equal(await page.locator('.price-check h3').textContent(), 'Price check: B — Good price');
         assert.equal(await page.locator('.price-check a').getAttribute('href'), '/deal-spotter/?asin=' + ASIN);
         assert.equal(await page.locator('#review-report').getByText('Is the price right?').count(), 0);
         await page.locator('.price-check').scrollIntoViewIfNeeded(); await contrastAudit(page, '#review-report'); await noScroll(); await shot('review-report');

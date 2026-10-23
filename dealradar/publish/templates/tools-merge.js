@@ -1,5 +1,6 @@
 // tools_merge (operator 2026-10-23): Fakespot's report rows, filled only from the grade the
-// page already received and the published prices file. No extra lookup, no star ratings.
+// page already received and the published prices file. No extra lookup, no star ratings,
+// and no past-price wording (operator 2026-10-17: history stays a hidden signal).
 function mergeAge(asOf) {
   var seconds = Math.max(0, Math.floor((Date.now() - Date.parse(asOf)) / 1000)), minutes = Math.floor(seconds / 60);
   var hours = Math.floor(minutes / 60), days = Math.floor(hours / 24);
@@ -7,7 +8,6 @@ function mergeAge(asOf) {
     days + (days === 1 ? ' day' : ' days')) + ' ago';
 }
 var MERGE_ICONS = {
-  trend: '<path d="M3 17l6-6 4 4 7-7M14 8h6v6"/>',
   shield: '<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>',
   people: '<circle cx="9" cy="8" r="3.2"/><path d="M3 20c.6-3.6 3-5.5 6-5.5s5.4 1.9 6 5.5M16 5.5a3 3 0 0 1 0 5.6M18 14.8c1.7.8 2.7 2.5 3 5.2"/>',
   box: '<path d="M3 7l9-4 9 4v10l-9 4-9-4V7z"/><path d="M3 7l9 4 9-4M12 11v10"/>',
@@ -61,10 +61,7 @@ function mergeReport(item, grade) {
   // Amazon's list price is plain information here, never a verdict.
   $('result-list').textContent = Number.isSafeInteger(item.list_price_cents) && item.list_price_cents > item.price_cents ?
     'Amazon list price: $' + (item.list_price_cents / 100).toFixed(2) : '';
-  var facts = Array.isArray(grade.facts) ? grade.facts : [], lines = [], pct = grade.usual_pct;
-  if (Number.isSafeInteger(pct) && Math.abs(pct) <= 100)
-    lines.push(mergeFact('trend', pct < 0 ? -pct + '% below its 90-day average price' : pct > 0 ?
-      pct + '% above its 90-day average price' : 'About the same as its 90-day average price'));
+  var facts = Array.isArray(grade.facts) ? grade.facts : [], lines = [];
   if (facts.includes('Verified deal on wowpriced')) lines.push(mergeFact('shield', 'A verified deal on wowpriced'));
   var monthly = monthlyBoughtLabel(item.monthlySold);
   if (monthly) lines.push(mergeFact('people', 'Popular: ' + monthly));
@@ -77,7 +74,7 @@ function mergeReport(item, grade) {
   $('helpful-status').textContent = '';
   var help = document.querySelector('.grade-help'); if (help) help.open = false;
 }
-// Fakespot's guide tabs: Price grade · 90-day price history · Price details · Find discounts.
+// Fakespot's guide tabs: Price grade · Verified deals · Price details · Find discounts.
 function mergeGuide() {
   var tabs = [...document.querySelectorAll('.guide-tabs [role="tab"]')];
   function show(index, focus) {

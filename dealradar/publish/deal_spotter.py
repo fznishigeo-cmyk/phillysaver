@@ -265,7 +265,7 @@ def publish(out, cfg, now, site_url, disclosure):
         settings = json.loads(config_path.read_text())
         settings["deal_spotter"] = cfg.deal_spotter
         if merged:
-            settings["tools_merge"] = True  # search.js: 90-day comparison, review page's price grade
+            settings["tools_merge"] = True  # search.js: the review page's price grade
         config_path.write_text(json.dumps(settings, separators=(",", ":")))
     doc = json.loads((out / "deals.json").read_text())
     single = cfg.deal_spotter.get("single_source_ok") is True
@@ -287,7 +287,7 @@ def publish(out, cfg, now, site_url, disclosure):
     landing = tools_merge.LANDING if tools_merge.landing_on(cfg) else {}
     for slug in SLUGS + tuple(landing):
         page = landing.get(slug)
-        faq = page["faq"] if page else tools_merge.spotter_faq(FAQ) if merged else FAQ
+        faq = page["faq"] if page else FAQ
         questions = ''.join('<details><summary>' + escape(q) + '</summary><p>' + escape(a) + '</p></details>' for q, a in faq)
         faq_schema = {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [
             {"@type": "Question", "name": q, "acceptedAnswer": {"@type": "Answer", "text": a}} for q, a in faq]}

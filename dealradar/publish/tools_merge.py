@@ -13,8 +13,10 @@ report. Menus and the homepage's two buttons name Fake Deal Spotter and Review C
 
 Typed words (not a link) never call /api/search: one box with the Discount Finder's
 Amazon discounts link, Amazon's highly rated list and our matching live deals.
-No new Keepa spend: the 90-day comparison and the review page's grade come from the
-lookups the tools already make. tools_merge false/missing = previous bytes.
+No new Keepa spend: the review page's price grade comes from the lookup it already makes.
+No public past-price wording (operator 2026-10-17): the grade may use the hidden history
+signal, but pages describe it by today's price, the list price and our verified deals.
+tools_merge false/missing = previous bytes.
 """
 
 import hashlib
@@ -34,37 +36,37 @@ LANDING = {
     "amazon-deal-checker": {
         "name": "Amazon Deal Checker",
         "title": "Amazon Deal Checker – Is This Price a Good Deal? | wowpriced",
-        "description": ("Free Amazon deal checker: paste a product link to see today's price, how it compares "
-                        "with its 90-day average and a simple A, B or C price grade. No sign-up."),
+        "description": ("Free Amazon deal checker: paste a product link to see today's price with shipping, "
+                        "Amazon's list price and a simple A, B or C price grade. No sign-up."),
         "h1": "Amazon Deal Checker",
         "sub": ("Is this Amazon price a good deal? Paste a product link for today’s price and a simple A, B or C grade."
                 "<br>Free on your phone and computer. No extension needed."),
         "button": "Check price",
         "intro": ("How to check an Amazon deal before you buy", (
             "A big “was” price can make any discount look exciting. The Amazon Deal Checker looks past it. Paste a "
-            "product link and it checks the price on Amazon today, including shipping when it is charged, then "
-            "compares it with what the same product has cost on Amazon over the last 90 days.",
+            "product link and it checks the price on Amazon today, including shipping when it is charged, against "
+            "Amazon’s list price when Amazon shows one and against our verified deals.",
             "You get a simple grade for the price: A for a great price, B for a good price and C for a fair price. "
-            "The report shows the plain facts behind it: today’s price, Amazon’s list price as information, how "
-            "today’s price compares with its 90-day average when that data is available, and whether wowpriced has "
-            "a verified deal for the same product.",
+            "The report shows the plain facts behind it: today’s price, Amazon’s list price as information, and "
+            "whether wowpriced has a verified deal for the same product, with its price checked against its source.",
             "The grade describes the price, not the product. It does not read reviews; for that, our free Review "
             "Checker looks at a product’s review signals. Prices on Amazon can change at any time, so confirm the "
             "price on Amazon before you buy.",
             "No link yet? Type the product name instead. We open Amazon’s current discounts and its highly rated "
-            "list for those words, and show any matching verified deals on wowpriced."),
-            ("Compare today’s price with its usual price, not only the “was” price.",
+            "list for those words, and show any matching verified deals on wowpriced.",
+            "The Amazon Deal Checker is free on your phone and computer, with no extension and no sign-up."),
+            ("Look at the price you pay today, not only the “was” price.",
              "Count shipping in the price you compare.",
              "Check the price on Amazon again right before you buy.")),
         "faq": (
             ("Is the Amazon Deal Checker free?", "Yes. It is free on your phone and computer, with no extension and no sign-up."),
             ("How does the deal checker grade a price?",
-             "It compares today’s Amazon price, including shipping when it is charged, with the product’s 90-day "
-             "average price on Amazon and with our published verified deals. A means a great price, B a good price "
-             "and C a fair price. When price information is limited, the grade is C."),
+             "It looks at today’s Amazon price, including shipping when it is charged, Amazon’s list price when it "
+             "shows one, and our published verified deals. A means a great price, B a good price and C a fair price. "
+             "When price information is limited, the grade is C."),
             ("Why not just go by the percent off?",
-             "A percent off is measured against a list or “was” price. Comparing with the product’s own recent prices "
-             "shows whether today’s price is lower than usual."),
+             "A percent off is measured against a list or “was” price, so a big percent off alone does not earn an A. "
+             "The grade also weighs today’s price against our verified deals."),
             ("Can I check a product without a link?",
              "Yes. Type the product name to open Amazon’s discounts and highly rated list for those words. For an A, "
              "B or C grade, paste the product’s Amazon link."),
@@ -86,12 +88,13 @@ LANDING = {
             "Amazon’s current discounts for those words and Amazon’s highly rated list for the same words. It also "
             "shows matching deals published on wowpriced, where every price was checked against its source.",
             "Typed words never start a price lookup, so the buttons appear right away. When you find a product you "
-            "like, paste its Amazon link here for a price check: today’s price with shipping, how it compares with "
-            "its 90-day average when that data is available, and a simple A, B or C grade.",
-            "A discount is a good deal only when the price is lower than usual. That is why our grade looks at "
-            "today’s price against the product’s own recent prices, not only against its list price.",
+            "like, paste its Amazon link here for a price check: today’s price with shipping, Amazon’s list price "
+            "when it shows one, and a simple A, B or C grade.",
+            "A big percent off is not always a great price. That is why our grade also checks today’s price against "
+            "our verified deals, not only against the list price.",
             "Discounts on Amazon depend on what is available today and can end at any time. Always confirm the "
-            "final price on Amazon before you buy."),
+            "final price on Amazon before you buy.",
+            "The Amazon Discount Finder is free on your phone and computer, with no extension and no sign-up."),
             ("Start with two or three words, like a product type and a brand.",
              "Open Amazon’s discounts, then paste the link of the product you like.",
              "Look for a B or better before you buy.")),
@@ -105,16 +108,13 @@ LANDING = {
              "checked against the source before they went live. Prices can change, so confirm the price on Amazon "
              "before you buy."),
             ("What if I paste an Amazon link instead?",
-             "You get a price check for that product: today’s price, how it compares with its 90-day average when "
-             "available, and an A, B or C price grade."),
+             "You get a price check for that product: today’s price with shipping, Amazon’s list price when it "
+             "shows one, and an A, B or C price grade."),
             ("Does wowpriced earn money from these links?",
              "Yes. As an Amazon Associate, wowpriced earns from qualifying purchases. Our links may earn a commission "
              "at no extra cost to you.")),
     },
 }
-SPOTTER_FAQ_PRICES = ("We use Amazon's current product price, its list price when available, and our published verified deals.",
-                      "We use Amazon's current product price, its list price when available, its 90-day average price on "
-                      "Amazon, and our published verified deals.")
 
 # The two homepage buttons keep their place and look (operator 2026-10-20 layout):
 # the blue one (phone: first) opens Fake Deal Spotter, the purple one Review Checker.
@@ -247,10 +247,6 @@ def spotter_tokens(rows, reviews_on):
     return {"SIDEBAR": sidebar(rows), "RECOMMENDS": recommends(rows), "REVIEW_ROW": review_row(reviews_on)}
 
 
-def spotter_faq(faq):
-    return tuple((q, a.replace(*SPOTTER_FAQ_PRICES)) for q, a in faq)
-
-
 def words_script(source, target):
     """Shared by both tools: the checker's own discount link, inventory and word matching."""
     from .deal_spotter import shared_functions
@@ -331,7 +327,7 @@ def spotter_footer(cfg, year, disclosure, amazon_store, social, nav):
 REVIEW_ABOUT = ('Make it part of your shopping routine. Use {{SPOTTER_ABOUT}}the <a href="/amazon-deal-checker/">Deal Checker</a> '
                 'to explore today’s price and verified deals.')
 REVIEW_ABOUT_NEW = ('Make it part of your shopping routine. Use <a href="/deal-spotter/">Fake Deal Spotter</a> to check '
-                    'today’s price against its usual price and our verified deals.')
+                    'today’s price and our verified deals.')
 REVIEW_TILE = ('<a href="/amazon-deal-checker/"><span class="tile-art" aria-hidden="true">$<i>✓</i></span>'
                '<span>Deal Checker →</span></a>\n')
 REVIEW_JS = (

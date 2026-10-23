@@ -1,6 +1,6 @@
 // Pages Function: current US product facts only. Never log upstream URLs/errors.
 import {matchesSearch, searchWords} from "../../dealradar/publish/templates/search-products.js";
-import {avg90Change, gradeDeal, publishedDealPrice, validDealSettings} from "./deal-grade.js";
+import {gradeDeal, publishedDealPrice, validDealSettings} from "./deal-grade.js";
 import {validReviewSettings, reviewResponse} from "./review-grade.js";
 
 const RESERVATION = 110; // each search page (10) + up to 100 product tokens
@@ -276,13 +276,12 @@ export async function onRequest(context) {
           const response = await env.ASSETS.fetch(new Request(new URL('/deal-spotter-prices.json', request.url)));
           if (response.ok) verified = publishedDealPrice(await response.json(), asin);
         } catch (_) { /* Missing inventory cannot confer verified status. */ }
-        const first = dealGrade ? publicBody.items?.[0] : _deal.item, total = shippingTotal(first);
-        const grade = gradeDeal({...first, ...total, avg90:_deal?.avg90,
+        const first = dealGrade ? publicBody.items?.[0] : _deal.item;
+        const grade = gradeDeal({...first, ...shippingTotal(first), avg90:_deal?.avg90,
           verified_price_cents:verified}, cfg.deal_spotter);
-        const change = cfg.tools_merge === true ? avg90Change(total.price_cents, _deal?.avg90) : null;
-        if (change !== null) grade.usual_pct = change;
+        // The review page shows the letter and its label only; past prices stay a hidden signal.
         if (dealGrade) publicBody.deal_grade = grade;
-        else publicBody.price_check = {grade:grade.grade, label:grade.label, ...(change !== null ? {usual_pct:change} : {})};
+        else publicBody.price_check = {grade:grade.grade, label:grade.label};
       }
       return json(publicBody);
     }

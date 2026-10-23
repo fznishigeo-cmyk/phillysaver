@@ -18,6 +18,9 @@ ITEMS = ("Women's soft knit cardigan sweater", "Wireless over-ear headphones", "
          "Silk pillowcase queen size", "Women's running shoes, lightweight mesh", "Insulated tumbler 30 oz")
 BANNED = re.compile(r"AI-powered|proprietary|million|testimonial|as seen on|as mentioned|add to chrome|trusted by|★|☆|"
                     r"\b\d[\d,]*\s+(?:ratings|reviews)\b", re.I)
+# Operator 2026-10-17 (Amazon's email): no public past-price wording; history is a hidden signal.
+PAST = re.compile(r"90-day|usual price|average price|price history|price-history|(?:in|over) the last \d+ days|"
+                  r"lowest|highest|recent prices|past prices|has cost", re.I)
 
 
 def rows():
@@ -94,7 +97,7 @@ def test_spotter_home_bands_menus_and_footer(tmp_path, monkeypatch):
     out, cfg = build(tmp_path, monkeypatch, True)
     html = page(out, "deal-spotter")
     tabs = re.findall(r'<button type="button" role="tab"[^>]*>([^<]+)</button>', html)
-    assert tabs == ["Price grade", "90-day price history", "Price details", "Find discounts"]
+    assert tabs == ["Price grade", "Verified deals", "Price details", "Find discounts"]
     assert html.count('role="tabpanel"') == 4 and html.count('<span class="shot-caption">Illustration</span>') == 4
     assert 'class="guide-section' not in html and 'id="phone-next"' not in html
     # Fakespot's order: how it works, the dark band, Love (with its button), the grey guide, a safe feeling.
@@ -111,6 +114,17 @@ def test_spotter_home_bands_menus_and_footer(tmp_path, monkeypatch):
     menu = re.search(r'<details class="spotter-menu">.*?</details>', html, re.S)[0]
     assert "/amazon-deal-checker/" not in menu and "/amazon-discount-finder/" not in menu and "Fake Deal Spotter" in menu
     assert not BANNED.search(text(html)), BANNED.search(text(html))
+
+
+def test_no_past_price_wording_in_either_tool(tmp_path, monkeypatch):
+    out, _ = build(tmp_path, monkeypatch, True)
+    names = ["deal-spotter.js", "deal-spotter.css", "review-checker.js", "review-checker.css", "deal-spotter-prices.json"]
+    names += [f"{slug}/index.html" for slug in ("deal-spotter", "fakespot-alternative", "amazon-deal-checker",
+                                                 "amazon-discount-finder", "review-checker", "reviewmeta-alternative")]
+    for name in names:
+        found = PAST.search((out / name).read_text())
+        assert not found, (name, found)
+    assert "usual_pct" not in (out / "deal-spotter.js").read_text() + (out / "review-checker.js").read_text()
 
 
 def test_spotter_report_rows_single_verdict_and_tagged_deals(tmp_path, monkeypatch):
@@ -200,7 +214,7 @@ def test_review_checker_menus_price_row_and_words(tmp_path, monkeypatch):
         assert 'Use <a href="/deal-spotter/">Fake Deal Spotter</a> to check today’s price' in html
     script = (out / "review-checker.js").read_text()
     assert "mergePriceRow(report, data, asin);" in script and "Is the price right?" not in script
-    assert "'Price check: ' + check.grade + ' — ' + usual" in script and "'Check this price →'" in script
+    assert "'Price check: ' + check.grade + ' — ' + check.label" in script and "'Check this price →'" in script
     assert "submit(typed.trim(), undefined, heroInput)" in script
 
 

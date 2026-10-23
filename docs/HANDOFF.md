@@ -250,23 +250,25 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   `tools_merge: true` (strict bool, default false; `publish/tools_merge.py`).
   Fake Deal Spotter takes Fakespot's home (order how-it-works, stores, dark
   band, "Love" band with "See today's best deals" -> /best-deals-today/, grey
-  "trusted guide" band with tabs Price grade / 90-day price history / Price
+  "trusted guide" band with tabs Price grade / Verified deals / Price
   details / Find discounts and HTML illustrations, footer columns wowpriced /
   Tools / Support / Social) and report (blue analyzer + "wowpriced recommends"
   strip; header photo/title/"Checked on Amazon N min ago"/category with the
   big A/B/C box, "What does this mean?" and Get this deal on Amazon; rows
   Price details, Overview, On wowpriced, Top sellers like this, Review
   signals; "Today's top deals" sidebar; "Was this analysis helpful?" ->
-  GA4-only `tool_feedback`). No Price history row: Amazon history is `hide`
-  and the lookup is history=0. /amazon-deal-checker/ and
+  GA4-only `tool_feedback`). No price-history row and no past-price wording
+  anywhere (2026-10-17 rule; tests/test_no_price_history_shipped.py): the
+  grade may use the hidden avg90 but pages describe it by today's price, the
+  list price and our verified deals. /amazon-deal-checker/ and
   /amazon-discount-finder/ are keyword landing pages (own title, description,
   H1, intro, FAQ, self-canonical, in the sitemap) whose tool is the spotter;
   no 301s. Typed words never call /api/search: one box with the Discount
   Finder's Amazon discounts link, the highly rated link and matching deals
   from /deals.json. Review Checker drops the old tools from its menus and
-  shows one "Price check" row: search.js computes the grade from the review
-  lookup's own stats when search-config.json has `tools_merge` (no extra
-  token); the spotter grade gains `usual_pct` (% vs the 90-day average).
+  shows one "Price check: B — Good price" row (letter + label): search.js
+  computes the grade from the review lookup's own stats when
+  search-config.json has `tools_merge` (no extra token).
   Needs both tools on (else inert). Homepage: the blue button is
   "Fake Deal Spotter →" (/deal-spotter/?q=), the purple one "Review Checker →"
   (/review-checker/?q=); events unchanged per slot plus `tool`. The live

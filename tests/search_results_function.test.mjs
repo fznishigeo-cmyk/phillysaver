@@ -7,7 +7,7 @@ const productsSource = fs.readFileSync(new URL('../dealradar/publish/templates/s
 const productsURL = 'data:text/javascript;base64,' + Buffer.from(productsSource).toString('base64');
 const gradeSource = fs.readFileSync(new URL('../functions/api/deal-grade.js', import.meta.url), 'utf8');
 const gradeURL = 'data:text/javascript;base64,' + Buffer.from(gradeSource).toString('base64');
-const {gradeDeal, publishedDealPrice, avg90Change} = await import(gradeURL);
+const {gradeDeal, publishedDealPrice} = await import(gradeURL);
 const reviewSource = fs.readFileSync(new URL('../functions/api/review-grade.js', import.meta.url), 'utf8');
 const reviewURL = 'data:text/javascript;base64,' + Buffer.from(reviewSource).toString('base64');
 const source = fs.readFileSync(new URL('../functions/api/search.js', import.meta.url), 'utf8')
@@ -1101,19 +1101,15 @@ test("a live refresh's extra token settles from Keepa's receipt", async () => {
 });
 
 // tools_merge (operator 2026-10-23): the same lookups, no extra Keepa call.
-test('tools_merge: the deal grade adds the 90-day comparison only with the switch on', async () => {
-  const p = product(); p.stats.avg90[18] = 1520;  // today 1399: 7.96% below, shown as 7
+// No past-price figure leaves the server (operator 2026-10-17): the 90-day average stays a hidden input.
+test('tools_merge: the deal grade answer is unchanged by the switch and carries no past-price figure', async () => {
+  const p = product(); p.stats.avg90[18] = 1520;
   const request = enableDealGrade(p);
   const off = await body(await request('&grade=deal'));
-  assert(!Object.hasOwn(off.deal_grade, 'usual_pct'));
   config.tools_merge = true; now += 1100;
   const on = await body(await request('&grade=deal'));
-  assert.equal(on.deal_grade.usual_pct, -7); assert.equal(on.deal_grade.grade, off.deal_grade.grade);
-  assert.deepEqual(on.deal_grade.facts, off.deal_grade.facts);
-  for (const word of ['avg90', '_deal', '1520']) assert(!JSON.stringify(on).includes(word), word);
-  assert.equal(avg90Change(1399, 1520), -7); assert.equal(avg90Change(1640, 1520), 7);
-  assert.equal(avg90Change(1520, 1520), 0);
-  for (const bad of [[0, 1520], [1399, null], [1399, -1], ['1399', 1520], [1399, 15.5]]) assert.equal(avg90Change(...bad), null);
+  assert.deepEqual(on, off); assert.deepEqual(Object.keys(on.deal_grade), ['grade', 'label', 'facts']);
+  for (const word of ['avg90', '_deal', '1520', 'pct']) assert(!JSON.stringify(on).includes(word), word);
 });
 test('tools_merge: a review report carries the price grade from the same lookup, never its inputs', async () => {
   config.review_checker = {...reviewConfig}; config.deal_spotter = {...DEAL_SETTINGS};
@@ -1131,7 +1127,7 @@ test('tools_merge: a review report carries the price grade from the same lookup,
   const on = await body(await reviewRun());
   assert.equal(calls.length, 2, 'one lookup per report, as before');
   // 1399 against a 2000 average and a 2999 list price: A, 30% below.
-  assert.deepEqual(on.price_check, {grade:'A', label:'Great price', usual_pct:-30});
+  assert.deepEqual(on.price_check, {grade:'A', label:'Great price'});  // the letter and its label only
   assert.deepEqual(Object.keys(on.items[0]), ['asin','title','image','price_cents','as_of']);
   for (const word of ['_deal', 'avg90', '2999', 'list_price', 'price_includes_shipping']) assert(!JSON.stringify(on).includes(word), word);
   assert.deepEqual(await body(await reviewRun()), on); assert.equal(calls.length, 2);
