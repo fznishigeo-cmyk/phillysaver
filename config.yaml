@@ -540,6 +540,10 @@ publish:
           categories: [electronics, computers, gaming]
         rest:                  # "the rest what you think": the best of everything else
           share: 5
+      # Operator 2026-10-23 ~18:50Z (A44 = B, "let beauty coupon deals through so you get about 7"):
+      # while one of these buckets is behind its share, its checkout-priced cards skip the homepage drop's
+      # checkout spacing (1 in 5); they never count toward it. Other buckets keep it. [] = spacing for all.
+      checkout_spacing_exempt: [beauty]
     popular_affordable:        # task 255: private Amazon popularity + low checkout price
       enabled: true            # operator 2026-10-17: "gadgets that people will actually buy" (bestsellers ≥1000/month); shadow ran since Oct 16
       shadow: true             # encrypted-state comparison; private growth report only

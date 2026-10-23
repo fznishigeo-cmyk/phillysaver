@@ -16,7 +16,7 @@ REST = "rest"
 def validate(options, groups):
     """Strict like the neighbouring knobs; absent stays OFF."""
     path = "publish.front_page.mix."
-    if not isinstance(options, dict) or set(options) - {"enabled", "per", "buckets"}:
+    if not isinstance(options, dict) or set(options) - {"enabled", "per", "buckets", "checkout_spacing_exempt"}:
         raise ValueError("publish.front_page.mix must contain supported settings only")
     if type(options.get("enabled", False)) is not bool:
         raise ValueError(path + "enabled must be a boolean")
@@ -44,6 +44,15 @@ def validate(options, groups):
             raise ValueError(where + ".categories must be a list of category names")
     if sum(b["share"] for b in buckets.values()) != per:
         raise ValueError(path + "bucket shares must add up to per")
+    free = options.get("checkout_spacing_exempt", [])
+    if not isinstance(free, list) or any(not isinstance(name, str) or name not in buckets for name in free):
+        raise ValueError(path + "checkout_spacing_exempt must be a list of bucket names")
+
+
+def exempt(front_page):
+    """Buckets whose checkout-priced cards skip the drop's checkout spacing
+    (operator 2026-10-23, A44); empty keeps it for every card."""
+    return (front_page.get("mix") or {}).get("checkout_spacing_exempt") or []
 
 
 def shares(front_page):
@@ -153,13 +162,19 @@ def _base_page(pool, mark, options, policy, found):
     share, and every spacing rule still wins over the mix (it gives way first).
     When no card fits every rule (live 2026-10-23: a drop of checkout-priced
     cards), checkout spacing gives way, then category runs; clothing and
-    allure spacing hold instead of taking the next card blindly."""
+    allure spacing hold instead of taking the next card blindly. An exempt
+    bucket's checkout cards never count toward checkout spacing and skip it
+    only while the bucket is behind its share: they catch up, but never take
+    the slots where the spacing gives way for a held-back card."""
     from .publish.drop_fresh import cheap
     if not pool:
         return []
     pending = _slice(pool, mark, options.get("fresh_page_size", 60), found)
     out = []
     target = min(19, sum(cheap(d) for d in pending), len(pending))
+    free = exempt(options)
+    def spaced(d):
+        return bool(d.get("pick_checkout")) and label(d, found) not in free
     def fits(d, level=0):
         pos = len(out)
         if d.get("allure") and policy["allure"] and (pos < policy["first"] or
@@ -168,8 +183,8 @@ def _base_page(pool, mark, options, policy, found):
         if d.get("cl") and policy["clothing"] and pos < policy["slots"] and sum(
                 bool(r.get("cl")) for r in out[pos // policy["mix"] * policy["mix"]:]) >= policy["clothing"]:
             return False
-        if level < 1 and d.get("pick_checkout") and sum(bool(r.get("pick_checkout")) for r in
-                out[max(0, pos - policy["promo"] + 1):]) >= policy["cap"]:
+        if level < 1 and d.get("pick_checkout") and not (label(d, found) in free and behind(d)) and sum(
+                spaced(r) for r in out[max(0, pos - policy["promo"] + 1):]) >= policy["cap"]:
             return False
         run = options.get("max_same_category_run", 2)
         return level > 1 or not (pos >= run and all(r.get("category") == d.get("category") for r in out[-run:]))
@@ -182,6 +197,8 @@ def _base_page(pool, mark, options, policy, found):
     taken, weight = Counter(), sum(found.values())
     def mixed(d):
         return weight * taken[label(d, found)] < (len(out) + 1) * found[label(d, found)]
+    def behind(d):
+        return weight * taken[label(d, found)] < len(out) * found[label(d, found)]
     def room(d):
         pos = len(out)
         run = options.get("max_same_category_run", 2)
@@ -346,6 +363,15 @@ SWAPS = (
     function signature(d) { return [d.category,freshWomen(d),freshCheap(d),!!d.cl,!!d.pick_checkout,!!d.allure,d.mx].join(':'); }
 """),
 )
+# Only with checkout_spacing_exempt (operator 2026-10-23, A44): the same rule as _base_page's spaced()/behind().
+EXEMPT = (
+    ("  function freshSlice(pool, mark) {\n",
+     "  function freshSpaced(d) { return !!d.pick_checkout && !freshRules.exempt.includes(freshLabel(d)); }\n"
+     "  function freshSlice(pool, mark) {\n"),
+    ("      if (!level && d.pick_checkout && out.slice(Math.max(0,pos-p.promo+1)).filter(r => r.pick_checkout).length >= p.cap) return false;\n",
+     "      if (!level && d.pick_checkout && !(freshRules.exempt.includes(freshLabel(d)) && weight*taken[freshLabel(d)] < "
+     "out.length*found[freshLabel(d)]) && out.slice(Math.max(0,pos-p.promo+1)).filter(freshSpaced).length >= p.cap) return false;\n"),
+)
 
 
 def site_version(version, cfg):
@@ -363,8 +389,11 @@ def publish(out, cfg):
     asset = out / drop_fresh.ASSET
     script = old = asset.read_text(encoding="utf-8")
     slot = dict(template_name=drop_fresh.ASSET, slot_name="front-mix")
+    free = exempt(cfg.front_page)
+    rules = "  freshRules.exempt = " + json.dumps(free, separators=(",", ":")) + ";\n" if free else ""
     for token, new in SWAPS + ((", freshCache = null;\n", ", freshCache = null;\n  freshRules.buckets = "
-                                + json.dumps(shares(cfg.front_page), separators=(",", ":")) + ";\n"),):
+                                + json.dumps(shares(cfg.front_page), separators=(",", ":")) + ";\n" + rules),) \
+            + (EXEMPT if free else ()):
         script = replace_slot(script, token, new, **slot)
     home = out / "index.html"
     version = "/drop-fresh.js?v=" + hashlib.sha256(script.encode()).hexdigest()[:12]
