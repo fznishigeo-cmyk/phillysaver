@@ -684,10 +684,39 @@ def pre_price_shipping_note(cfg):
 def pre_social_profiles(cfg):
     """Before the real Facebook and Pinterest profiles were configured (operator 2026-10-22)."""
     cfg.social_profiles = {}
+    pre_front_mix(cfg)
     return cfg
 
 
 def pre_social_profiles_raw(config):
     config.get("social", {}).pop("profiles", None)
+    pre_front_mix_raw(config)
+    return config
+
+
+# Front mix (operator 2026-10-22): bucket shares of every 30 front cards and the
+# women's allure words it added. Recorded fixtures keep the earlier front page.
+PRE_FRONT_MIX_ALLURE = {"lace teddy", "chemise", "silk slip", "slip dress", "bustier", "garter", "thigh highs",
+                        "fishnet stockings", "lace stockings", "silk pajamas", "nightie", "bodycon dress",
+                        "cocktail dress"}
+
+
+def _pre_front_mix(front_page):
+    if not isinstance(front_page, dict):
+        return
+    front_page.pop("mix", None)
+    groups = ((front_page.get("appeal") or {}).get("want") or {}).get("groups")
+    if isinstance(groups, dict) and isinstance(groups.get("allure"), list):
+        groups["allure"] = [w for w in groups["allure"] if w not in PRE_FRONT_MIX_ALLURE]
+
+
+def pre_front_mix(cfg):
+    """Before the front mix; never re-pin recorded publication bytes."""
+    _pre_front_mix(cfg.front_page)
+    return cfg
+
+
+def pre_front_mix_raw(config):
+    _pre_front_mix(config.get("publish", {}).get("front_page"))
     return config
 

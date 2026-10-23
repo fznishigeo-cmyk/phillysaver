@@ -27,6 +27,7 @@ def options():
     options["top_picks"]["max_same_brand"] = 3  # recorded before the first-screen mix
     options["top_picks"].pop("brand_from_title", None)
     options["top_picks"].pop("max_clothing_per_window", None)
+    options.pop("mix", None)  # recorded before the front mix
     return options
 
 

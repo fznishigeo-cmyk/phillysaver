@@ -417,7 +417,8 @@ def static_wall(teaser: list[dict[str, Any]], open_access: bool = False,
         spotlight = space_rows(spotlight, rules=policy)
         free = space_rows(free, spotlight, policy)
     if fresh_config is not None:
-        from .drop_fresh import rotation, page
+        from .drop_fresh import rotation
+        from ..front_mix import page
         from .same_product_spacing import rules
         pool = rotation(fresh_rows, front_page or {})
         mark = fresh_mark if fresh_mark is not None else int(now.timestamp()) // (fresh_config.drop_minutes * 60)
@@ -1283,7 +1284,8 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     confirmed = [d for d in live if not d.get("price_unconfirmed") and not d.get("price_aged")]
     intro = (f"The {min(30, len(confirmed))} best of {count} live deals right now."
              if confirmed else "Our top picks are selected from offers that pass our price checks.")
-    best_rows = pick_order(confirmed, cfg.front_page)[:30]
+    from ..front_mix import lead
+    best_rows = lead(pick_order(confirmed, cfg.front_page), cfg.front_page)[:30]
     best_content = ('<h2 class="sr-only">Best live deals</h2>' + _best_summary(best_rows)
                     + '<div class="grid">' + cards_html(best_rows, paths, now, static_photos=cfg.static_photos,
                                                        credit_links=cfg.credit_links)
