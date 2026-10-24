@@ -11,7 +11,7 @@ from dealradar.config import AppConfig, load_config
 from dealradar.db import DB
 from dealradar.publish import hide_timer_ticker, keep_first_cards, phone_first_screen as feature, site
 from scripts.publication_budget import analyze
-from tests.history_pins import pre_front_mix, pre_phone_first_screen, pre_social_profiles
+from tests.history_pins import pre_best_today_tab, pre_front_mix, pre_phone_first_screen, pre_social_profiles
 from tests.phone_budget_fixture import NOW, fixture_offers, publish_fixture, visible_offer_count
 from tests.test_keep_first_cards import files, probe
 from tests.test_search_amazon import run_node
@@ -141,7 +141,7 @@ def test_phone_budget_with_the_switch_on(tmp_path, links):
     with the declined home tool links, test_tool_pages_1020's, where the ticker rules sit in home-tools.css)."""
     sizes = {}
     for on in (False, True) if not links else (True,):
-        cfg = pre_front_mix(load_config())
+        cfg = pre_best_today_tab(pre_front_mix(load_config()))  # the pill's bytes: test_best_today_tab
         cfg.phone_first_screen = on
         cfg.phone_budget["enabled"] = True
         if links:

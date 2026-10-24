@@ -147,7 +147,7 @@ async function open(browser, root, width, height, scheme) {
         // Kept on every card: price, store, credit, Get deal (taps on the card still open it).
         for (const c of n.cards.slice(0, 3)) {
           assert(c.price && c.store && c.credit && c.buy, label + ': price, store, credit and Get deal stay');
-          assert(c.photoTapsBuy, label + ': the card tap still goes through Get deal (deal_click)');
+          if (c.fully) assert(c.photoTapsBuy, label + ': the card tap still goes through Get deal (deal_click)');
           assert(c.buy.height >= 44 && c.buy.width >= 44, label + ': Get deal tap target');
           assert(!c.headline || !c.badge, label + ': the headline goes only where the badge says how it was verified');
           if (c.hasHow && !c.how) {

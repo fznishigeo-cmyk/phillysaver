@@ -109,7 +109,8 @@ def test_phone_budget_cost_is_bounded(tmp_path):
     cost = {name: metrics[True][name] - metrics[False][name] for name in metrics[True]}
     # The row's markup (HTML) and renderTabs' copy of it (inline script, counted in both).
     assert 0 < cost.pop("home_html") <= 64 and 0 < cost.pop("home_js") <= 40
-    assert set(cost.values()) == {0}  # CSS and deals.json unchanged
+    assert cost.pop("home_css") == 0  # CSS unchanged
+    assert abs(cost.pop("deals_json")) <= 4 and not cost  # deals.json: only its site_version stamp differs
 
 
 def test_pill_in_real_chromium(tmp_path):
