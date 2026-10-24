@@ -1617,7 +1617,9 @@ class TestCarefulDeath:
         assert row["died_at"] == recent.isoformat()
         stored = json.loads(db.conn.execute(
             "SELECT payload FROM deals WHERE dedupe_key='url|wh'").fetchone()[0])
-        assert set(_DEAL_FIELDS) <= set(stored)
+        # Optional Woot provenance (woot.condition_lock) is absent on rows not
+        # created from the Woot API; every other field must survive the repair.
+        assert set(_DEAL_FIELDS) - {"woot_condition", "woot_offer_id"} <= set(stored)
         for key in ("url|old", "url|expired", "url|soldout", "url|new"):
             other = db.get_deal(key)
             assert other["status"] == "dead" and other["price_rechecked_at"]
