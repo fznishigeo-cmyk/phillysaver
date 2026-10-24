@@ -21,7 +21,7 @@ from itertools import chain, zip_longest
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
-from . import efficiency, rank, state_retention, util
+from . import accuracy_lite_counts, efficiency, rank, state_retention, util
 from .config import AppConfig, get_secret, load_config, load_sources
 from .db import DB
 from .errors import DeadlineExceeded, ParserNotConfigured, SpendCapReached
@@ -2537,6 +2537,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                 counts = summary["deaths_by_reason"]
                 counts[reason] = counts.get(reason, 0) + 1
 
+    summary["accuracy_lite"], accuracy_token = accuracy_lite_counts.start()
     try:
         from . import clicks
         if clicks.enabled(cfg):
@@ -3187,6 +3188,9 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                  {k: v for k, v in summary.items() if k not in {"source_errors", "popular_affordable", "want_season"}})
         return summary
     finally:
+        accuracy_lite_counts.finish(accuracy_token)
+        log.info("accuracy_lite: %s", " ".join(
+            f"{name}={count}" for name, count in summary["accuracy_lite"].items()))
         try:
             # Persist only counters/ages, including unavailable fields on a
             # failed run. No public payload or external request is involved.

@@ -75,6 +75,14 @@ async function amazonBreakdown() {
         }
         await page.screenshot({path: `${OUT}/${tool.name}-${size}-start.png`});
         await page.fill(tool.input, asin);
+        // Observe the page's lookup; never issue another API request.
+        const apiItem = page.waitForResponse(response => {
+          const url = new URL(response.url());
+          return url.origin === new URL(SITE).origin && url.pathname === "/api/search" &&
+            url.searchParams.get("asin") === asin &&
+            url.searchParams.get("grade") === (tool.name === "deal-spotter" ? "deal" : "reviews");
+        }, {timeout: 75000}).then(response => response.json())
+          .then(data => data?.items?.[0] || {}).catch(() => ({}));
         await page.press(tool.input, "Enter");
         let grade = "", label = "", price = "", shipping = "", note = "";
         try {
@@ -97,6 +105,11 @@ async function amazonBreakdown() {
         console.log(`${tool.name} ${size}: HTTP ${response && response.status()} grade=${grade || "-"} "${label}"` +
                     `${price ? " price=" + JSON.stringify(price) + " shipping=" + JSON.stringify(shipping || "none") : ""}` +
                     `${note ? " note=" + JSON.stringify(note) : ""}${errors.length ? " page errors: " + errors.join(" | ") : ""}`);
+        const item = await apiItem;
+        console.log(`${tool.name} api: price_cents=${item.price_cents ?? "none"} ` +
+                    `shipping_cents=${item.shipping_cents ?? "none"} ` +
+                    `price_includes_shipping=${item.price_includes_shipping ?? "none"} ` +
+                    `list_price_cents=${item.list_price_cents ?? "none"} as_of=${item.as_of ?? "none"}`);
         await page.close();
       }
     }

@@ -32,7 +32,7 @@ from typing import Any
 
 import httpx
 
-from .. import util
+from .. import accuracy_lite_counts, util
 from ..config import AppConfig, get_secret
 from ..db import DB
 from ..http_client import api_fetcher
@@ -284,6 +284,7 @@ def _recheck_offers(db: DB, items: list, now: datetime, *,
                 continue
             ends = util.parse_iso(str(matches[0].get("EndDate") or ""))
             if ends is None or ends > now:
+                accuracy_lite_counts.increment("woot_condition_skips")
                 continue
         item = matches[0]
         payload = dict(deal)
@@ -294,6 +295,7 @@ def _recheck_offers(db: DB, items: list, now: datetime, *,
             uid = str(item.get("OfferId") or item.get("Id") or "")
             if not (ends is not None and ends <= now and uid
                     and uid == str(deal.get("woot_offer_id") or "")):
+                accuracy_lite_counts.increment("woot_condition_skips")
                 continue
         if ends is not None and ends <= now:
             accuracy.record(db, cfg, deal["dedupe_key"], now, source="woot", unavailable=True)
@@ -465,6 +467,7 @@ class WootAdapter(SourceAdapter):
                 continue
             url = woot_offer_url({"canonical_url": item.get("Url")})
             if any(_condition_mismatch(deal, item) for deal in stored_conditions.get(url, [])):
+                accuracy_lite_counts.increment("woot_condition_skips")
                 continue  # intake must not undo the recheck's condition lock
             ends = util.parse_iso(str(item.get("EndDate") or ""))
             if ends is not None and ends <= now:

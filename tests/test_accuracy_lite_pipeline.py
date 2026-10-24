@@ -12,11 +12,16 @@ from tests.test_e2e_offline import NOW, _offline_env, _run
 
 
 @pytest.mark.parametrize("enabled", [False, True])
-def test_pipeline_savings_switch_and_rerun(tmp_path, monkeypatch, enabled):
+def test_pipeline_savings_switch_and_rerun(tmp_path, monkeypatch, caplog, enabled):
+    from tests.test_accuracy_lite_counts import ZERO
+
+    caplog.set_level("INFO", logger="dealradar.pipeline")
     env = _offline_env(tmp_path, monkeypatch)
     path = Path(env["cfg"])
     raw = yaml.safe_load(path.read_text())
     raw["savings"] = {"accuracy_lite": enabled}
+    raw["woot"]["condition_lock"] = enabled
+    raw["amazon"]["renewed_title_lock"] = enabled
     raw["parse"]["critic_tiering"]["enabled"] = False
     path.write_text(yaml.safe_dump(raw))
     post = RawPost(
@@ -30,6 +35,9 @@ def test_pipeline_savings_switch_and_rerun(tmp_path, monkeypatch, enabled):
     monkeypatch.setattr(pipeline, "_fetch_all", lambda *a, **kw: ([post], {}))
     monkeypatch.setenv("DEALRADAR_RUN_KEY", "accuracy-lite-rerun")
     first = _run(env)
+    assert first["accuracy_lite"] == ZERO | {"subscribe_save_unknown": int(enabled)}
+    line = "accuracy_lite: " + " ".join(f"{k}={v}" for k, v in first["accuracy_lite"].items())
+    assert caplog.messages.count(line) == 1
     db = DB(env["db"])
     try:
         rows = db.all_deals()
@@ -40,8 +48,32 @@ def test_pipeline_savings_switch_and_rerun(tmp_path, monkeypatch, enabled):
         before = {table: db.conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
                   for table in tables}
         second = _run(env)
+        assert second["accuracy_lite"] == ZERO
+        assert first["accuracy_lite"] == ZERO | {"subscribe_save_unknown": int(enabled)}
         assert first["run_key"] == second["run_key"] == "accuracy-lite-rerun"
         assert before == {table: db.conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
                           for table in tables}
     finally:
         db.close()
+
+
+def test_failed_pipeline_restores_counter_scope(tmp_path, monkeypatch, caplog):
+    from dealradar import accuracy_lite_counts
+    from tests.test_accuracy_lite_counts import ZERO, recording
+
+    env = _offline_env(tmp_path, monkeypatch)
+    caplog.set_level("INFO", logger="dealradar.pipeline")
+
+    def fail(*args, **kwargs):
+        accuracy_lite_counts.increment("renewed_title_lane")
+        raise RuntimeError("offline fetch failure")
+
+    monkeypatch.setattr(pipeline, "_fetch_all", fail)
+    with recording() as outer:
+        with pytest.raises(RuntimeError, match="offline fetch failure"):
+            _run(env)
+        assert outer == ZERO
+        accuracy_lite_counts.increment("minimum_spend")
+    assert outer == ZERO | {"minimum_spend": 1}
+    assert sum(m.startswith("accuracy_lite: ") for m in caplog.messages) == 1
+    assert "renewed_title_lane=1" in caplog.text
