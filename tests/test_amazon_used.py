@@ -27,7 +27,7 @@ def cfg():
     return load_config()
 
 
-@pytest.mark.parametrize("condition", ["used", "open_box", "refurbished", "Used – Like New",
+@pytest.mark.parametrize("condition", ["used", "open_box", "refurbished", "Renewed", "Renewed Premium", "Used – Like New",
     "Used – Very Good", "Used – Good", "Used – Acceptable", "Amazon Warehouse", "Amazon Resale"])
 def test_amazon_only_gate_and_rollback(db, cfg, condition):
     row = seed(db, cfg, conditions=[condition], price_rechecked_at=util.iso(NOW))
@@ -48,6 +48,10 @@ def test_amazon_only_gate_and_rollback(db, cfg, condition):
     dict(item="Widget Used – Very Good"), dict(item="Widget Sold by Amazon Resale"),
     dict(item="Widget open-box"), dict(item="Widget (Renewed)"),
     dict(item="Widget (Refurbished)"), dict(item="Widget - Renewed"),
+    dict(item="Widget [Renewed]"), dict(item="Widget (Renewed Premium)"),
+    dict(item="Widget Renewed Premium"), dict(item="Widget [Renewed Premium] - Black"),
+    dict(item="[Renewed] Widget"), dict(item="[Refurbished] Widget"),
+    dict(item="Widget Renewed"), dict(item="Widget [Refurbished]"),
     dict(item="Widget Refurbished"), dict(item="Refurbished Widget"),
     dict(item="Widget (Used)"), dict(item="Widget - Used"), dict(item="Used Widget"),
     dict(item="Widget (Open Box)"), dict(item="Apple iPhone 12 Used - Excellent"),
@@ -62,6 +66,8 @@ def test_legacy_missing_conditions_are_suppressed(db, cfg, changes):
     "New headphones", "Refurbished-look headphones", "Headphones used for calls",
     "Headphones (used for calls)", "Renewed-look headphones", "Unused headphones",
     "Used for calls headset", "open-box-style organizer", "Amazon Renewed-look headphones",
+    "philosophy Renewed Hope in a Jar Moisturizer", "Renewed Skin Serum",
+    "Acme Refurbished Skin Serum",
 ])
 def test_legacy_title_without_condition_label_stays_publishable(db, cfg, title):
     row = dict(seed(db, cfg, conditions=[], price_rechecked_at=util.iso(NOW)), item=title)

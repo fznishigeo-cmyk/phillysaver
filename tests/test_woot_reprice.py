@@ -257,6 +257,124 @@ def test_direct_reprice_accepts_unknown_feed_condition(db, cfg, condition):
     assert after["final_price"] == 25 and after["conditions"] == []
 
 
+def legacy_stored(db, cfg, condition="missing"):
+    row = stored(db, cfg, price=100)
+    if condition == "missing":
+        del row["conditions"]
+    else:
+        row["conditions"] = condition
+    db.update_deal(row["dedupe_key"], payload=row)
+    return db.get_deal(row["dedupe_key"])
+
+
+@pytest.mark.parametrize("condition", ["New", "Refurbished", "New - Open Box", "Used - Like New"])
+@pytest.mark.parametrize("reading", ["ended", "same_price", "lower_price", "range"])
+def test_legacy_missing_stored_condition_keeps_feed_checks(db, cfg, condition, reading):
+    before = legacy_stored(db, cfg)
+    initial = counts(db)
+    item = offer(25 if reading == "lower_price" else 100, 150, condition=condition)
+    if reading == "ended":
+        item["EndDate"] = util.iso(NOW)
+    elif reading == "range":
+        item["SalePrice"] = [90, 110]
+    stats = check(db, cfg, [item])
+    after = db.get_deal(before["dedupe_key"])
+    if reading == "ended":
+        assert after["status"] == "dead" and after["death"] == "api_ended"
+        assert counts(db) == initial
+    else:
+        assert stats["confirmed"] == 1
+        assert stats["repriced"] == int(reading == "lower_price")
+        assert after["woot_listed_at"] == util.iso(NOW)
+        assert after["final_price"] == (25 if reading == "lower_price" else 100)
+        if reading != "range":
+            assert after["price_rechecked_at"] == util.iso(NOW)
+        assert counts(db) == dict(initial, price_history=initial["price_history"]
+                                 + {"same_price": 1, "lower_price": 2, "range": 0}[reading])
+    assert "conditions" not in after
+    check(db, cfg, [item])
+    assert db.get_deal(before["dedupe_key"]) == after
+
+
+@pytest.mark.parametrize("condition", ["New", "Refurbished", "New - Open Box", "Used - Like New"])
+def test_direct_reprice_accepts_legacy_missing_stored_condition(db, cfg, condition):
+    before = legacy_stored(db, cfg)
+    post = woot.WootAdapter._map_item(offer(25, 100, condition=condition), SRC, NOW)
+    assert dedupe.reprice_existing(db, before, post, cfg, NOW)
+    after = db.get_deal(before["dedupe_key"])
+    assert after["final_price"] == 25 and "conditions" not in after
+    initial = counts(db)
+    assert not dedupe.reprice_existing(db, before, post, cfg, NOW)
+    assert db.get_deal(before["dedupe_key"]) == after and counts(db) == initial
+
+
+@pytest.mark.parametrize("condition", ["New", "Refurbished", "New - Open Box", "Used - Like New"])
+@pytest.mark.parametrize("source", ["woot", "hip2save"])
+def test_intake_accepts_legacy_missing_stored_condition(db, cfg, condition, source):
+    before = legacy_stored(db, cfg)
+    post = woot.WootAdapter._map_item(offer(25, 100, condition=condition,
+        StartDate=util.iso(NOW), Url=before["canonical_url"], Title=before["item"]), SRC, NOW)
+    ext = to_extracted(LLMDeal.model_validate(post.structured), post, "UTC", NOW)
+    post.source_name = source
+    dedupe.upsert_extracted(db, ext, savings.compute_savings(ext), post, cfg, NOW)
+    after = db.get_deal(before["dedupe_key"])
+    assert after["final_price"] == 25 and after["conditions"] == ext.conditions
+    initial = counts(db)
+    dedupe.upsert_extracted(db, ext, savings.compute_savings(ext), post, cfg, NOW)
+    assert db.get_deal(before["dedupe_key"]) == after and counts(db) == initial
+
+
+@pytest.mark.parametrize("condition", ["missing", None, "", "   "])
+def test_legacy_missing_condition_survives_database_restart(tmp_path, cfg, condition):
+    path = str(tmp_path / "legacy.db")
+    db = DB(path)
+    try:
+        before = legacy_stored(db, cfg, condition)
+    finally:
+        db.close()
+    db = DB(path)
+    try:
+        assert check(db, cfg, [offer(25, 100, condition="Refurbished")])["repriced"] == 1
+        after = db.get_deal(before["dedupe_key"])
+        assert after["final_price"] == 25 and "conditions" not in after
+    finally:
+        db.close()
+
+
+@pytest.mark.parametrize("condition", ["missing", None, "", "   "])
+@pytest.mark.parametrize("prime_only", [False, True])
+def test_legacy_unknown_condition_intake_does_not_invent_new(db, cfg, condition, prime_only):
+    before = legacy_stored(db, cfg)
+    item = offer(25, 100, condition=condition, StartDate=util.iso(NOW),
+                 Url=before["canonical_url"], Title=before["item"])
+    if condition == "missing":
+        del item["Condition"]
+    post = woot.WootAdapter._map_item(item, SRC, NOW)
+    ext = to_extracted(LLMDeal.model_validate(post.structured), post, "UTC", NOW)
+    if prime_only:
+        ext.conditions.append("prime_only")
+    dedupe.upsert_extracted(db, ext, savings.compute_savings(ext), post, cfg, NOW)
+    after = db.get_deal(before["dedupe_key"])
+    assert after["final_price"] == 25
+    assert after.get("conditions") == (["prime_only"] if prime_only else None)
+    if prime_only:
+        after.update(image_url="", flags=["image_backfill_tried"])
+        db.update_deal(after["dedupe_key"], payload=after)
+        pipeline._repair_emptied_photos(db, [after], {"hip2save": True}, {})
+        assert "image_backfill_tried" not in db.get_deal(after["dedupe_key"])["flags"]
+    assert check(db, cfg, [offer(20, 100, condition="Refurbished")])["repriced"] == 1
+    later = NOW + timedelta(minutes=1)
+    stated = woot.WootAdapter._map_item(offer(18, 100, condition="Refurbished",
+        StartDate=util.iso(later), Url=before["canonical_url"], Title=before["item"]), SRC, later)
+    ext = to_extracted(LLMDeal.model_validate(stated.structured), stated, "UTC", later)
+    dedupe.upsert_extracted(db, ext, savings.compute_savings(ext), stated, cfg, later)
+    after = db.get_deal(before["dedupe_key"])
+    initial = counts(db)
+    assert after["final_price"] == 18 and "refurbished" in after["conditions"]
+    assert check(db, cfg, [offer(15, 100, condition="New")], now=later)["repriced"] == 0
+    assert db.get_deal(before["dedupe_key"]) == after and counts(db) == initial
+
+
 @pytest.mark.parametrize("condition", ["missing", None, "", "   "])
 @pytest.mark.parametrize("structured", [True, False])
 def test_unknown_condition_intake_preserves_stored_new_condition(db, cfg, condition, structured):
@@ -285,6 +403,7 @@ def test_unknown_condition_intake_preserves_stored_new_condition(db, cfg, condit
 
 @pytest.mark.parametrize("conditions,condition", [
     ([], "Refurbished"), ([], "New - Open Box"), ([], "Used - Like New"),
+    (["New"], "Refurbished"), (["Brand New"], "Refurbished"),
     (["used"], "New"), (["refurbished"], "New"), (["open_box"], "New"),
     (["refurbished"], "Used - Grade B"), (["open_box"], "Refurbished"),
 ])
@@ -299,6 +418,21 @@ def test_condition_change_never_reprices_confirms_or_records_history(db, cfg, co
     assert stats == dict(confirmed=0, repriced=0, range_skipped=0, above_range=0)
     assert db.get_deal(before["dedupe_key"]) == before
     assert counts(db) == initial
+
+
+def test_unknown_requirement_intake_retains_known_new_condition(db, cfg):
+    before = stored(db, cfg, price=100)
+    post = woot.WootAdapter._map_item(offer(25, 100, condition="",
+        StartDate=util.iso(NOW), Url=before["canonical_url"], Title=before["item"]), SRC, NOW)
+    ext = to_extracted(LLMDeal.model_validate(post.structured), post, "UTC", NOW)
+    post.structured = None
+    ext.conditions.append("prime_only")
+    dedupe.upsert_extracted(db, ext, savings.compute_savings(ext), post, cfg, NOW)
+    after = db.get_deal(before["dedupe_key"])
+    assert after["final_price"] == 25 and after["conditions"] == ["prime_only"]
+    initial = counts(db)
+    assert check(db, cfg, [offer(20, 100, condition="Refurbished")])["repriced"] == 0
+    assert db.get_deal(before["dedupe_key"]) == after and counts(db) == initial
 
 
 @pytest.mark.parametrize("conditions,condition", [
@@ -316,6 +450,7 @@ def test_direct_reprice_rejects_changed_condition(db, cfg, conditions, condition
 
 @pytest.mark.parametrize("conditions,condition", [
     ([], "Brand New"), (["Renewed"], "Manufacturer Refurbished"),
+    (["New"], "Brand New"), (["Brand New"], "New"),
     (["used", "open_box"], "New - Open Box"), (["Pre-Owned"], "Used - Grade B"),
 ])
 def test_matching_normalized_condition_can_reprice(db, cfg, conditions, condition):

@@ -244,6 +244,41 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Accuracy regression follow-up (2026-10-24; uncommitted, HEAD `2b98ac3`):**
+  Preserved the partial run's evidence/savings fixes and repaired the ten review
+  regressions. Identical reordered qualifier facts no longer veto dedupe;
+  occupied identity suffixes are probed without changing legacy keys. Model
+  families distinguish C920/C922 despite shared 1080p, and iPhone model numbers
+  veto wrong photo/name matches. Sony battery suffixes and shortened LEGO set
+  names merge/corroborate/replay; accessory and explicit-conflict vetoes remain.
+  Per-unit evidence requires both unit fields; range recognition excludes model
+  codes and still requires a flag with optional currency symbols. Minimum
+  spend uses cents-rounded eligibility, explicit S&S extra discounts apply,
+  and comma-separated discount/minimum amounts retain full-number evidence.
+  Renewed/Refurbished product-name words stay in the NEW lane; explicit tags,
+  suffixes, condition fields and existing Refurbished-prefix labels stay used.
+  Legacy Woot missing/null/blank conditions remain unknown through DB loading,
+  restart, rechecks and intake. A private `_woot_condition_unknown` payload bit
+  preserves that fact when requirements such as Prime are added, including
+  photo-repair rewrites; explicit condition intake clears it. Known-new rows
+  remain locked after requirement updates. No public/model/schema changes.
+  Added failing-before tests: HEAD evidence/savings **24 failures**, identity
+  **23 failures**, initial condition/Woot **31 failures**, plus focused boundary
+  and provenance reproductions. Existing evidence/condition locks stay tested.
+  The requested wording checks and AirPods/Crest aliases were **not real**
+  regressions; Sony/short LEGO aliases were real and now pass. Final required
+  offline selection (all named accuracy tests, offline e2e, dedupe, extractor
+  and pipeline files) passed **970 tests in 136.63s**, using `-n 3 -p
+  no:cacheprovider` (`/tmp/accuracy-fix-final-green.log`), including both offline
+  idempotency modes. Final price/evidence/schema checks: **267 passed**;
+  photo/product/tiering neighbors: **247 passed**, including tiering replay.
+  All runs used at most three workers in total. The eight failures in the
+  preceding combined run were new fixture clocks that intentionally triggered
+  the existing equal-time API-price guard; only their later-event clocks were
+  corrected, preserving that guard. Final run has no failures; Stripe socket
+  tests were outside this selection and remain unchanged. `git diff --check`
+  passes. No network calls, commit, push or production-state changes.
+  Remaining: operator review of the uncommitted diff.
 - **Backend accuracy (branch `accuracy`, 2026-10-24; uncommitted):** Test-first
   fixes for B1/B2/C1/C2/A2/A1/C3 and optional A3/A4. Woot rechecks,
   same-row repricing and intake reject explicitly changed normalized conditions

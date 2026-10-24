@@ -114,6 +114,10 @@ def _condition_is_explicit(post: RawPost) -> bool:
     return bool(stated and stated.group(1).strip())
 
 
+def _stored_condition_is_explicit(deal: dict) -> bool:
+    return "conditions" in deal and not deal.get("_woot_condition_unknown")
+
+
 def _num(v: Any) -> float | None:
     if isinstance(v, bool):
         return None
@@ -278,8 +282,8 @@ def _recheck_offers(db: DB, items: list, now: datetime, *,
             continue
         item = matches[0]
         condition = str(item.get("Condition") or "").strip()
-        if condition and condition_class(deal.get("conditions")) != condition_class(
-                _conditions(condition)):
+        if (condition and _stored_condition_is_explicit(deal)
+                and condition_class(deal["conditions"]) != condition_class(_conditions(condition))):
             continue
         payload = dict(deal)
         ends = util.parse_iso(str(item.get("EndDate") or ""))

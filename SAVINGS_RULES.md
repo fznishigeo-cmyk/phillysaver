@@ -31,10 +31,11 @@ conditions → excluded `in_store`.
 
 Before math, the evidence gate requires checkout-price context for a final
 price, including text immediately outside a clipped quote. A number used as
-a monthly payment, per-unit comparison, percentage, quantity, coupon minimum,
+a monthly payment, unmarked per-unit comparison, percentage, quantity, coupon minimum,
 reward, or was-price cannot establish a checkout price. Range endpoints need
 `price_is_range=True` and then follow rule 3. Monetary schema fields never
-coerce a percentage string into a dollar amount.
+coerce a percentage string into a dollar amount. A stated per-unit price is
+valid when both price-unit fields explicitly say `per_unit` (rule 10).
 
 - Regular **and** final both stated ("reg $A now $B", "$A value for $B",
   "$A worth for $B") → `pct = (A - B_adj) / A * 100`, `basis='quoted_regular'`.
@@ -131,9 +132,11 @@ the regular price and apply `parse_stack_step` results sequentially in the
 The service name "Subscribe & Save" alone is not dollar-discount wording:
 "Subscribe & Save $8.49" cannot subtract $8.49 from the regular price. Without
 an explicit sale-price or discount phrase, that step is unknown. A stated
+discount such as "Subscribe and save an extra $2" still applies. A stated
 minimum-spend coupon ("$5 off $25", "$5 off orders of $25+") applies only when
-the running item price reaches the minimum; otherwise derived savings are
-not computable (`minimum_spend`). Additional cart items are never assumed.
+the running item price, rounded to cents, reaches or exceeds the minimum;
+otherwise derived savings are not computable (`minimum_spend`). Additional
+cart items are never assumed.
 
 `pct_at_checkout` comes from the running total (shipping-adjusted);
 `pct_with_rebates` additionally subtracts the rebates (percent rebates are

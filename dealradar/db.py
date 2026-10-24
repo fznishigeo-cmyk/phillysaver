@@ -40,6 +40,15 @@ class _CacheSweepDeferred(Exception):
     """Roll back an unfinished chunk when its cooperative time allowance ends."""
 
 
+def _normalize_stored_conditions(payload: dict) -> None:
+    # An explicit [] means new; legacy missing/null/blank is unknown.
+    conditions = payload.get("conditions")
+    if conditions is None or isinstance(conditions, str) and not conditions.strip():
+        payload.pop("conditions", None)
+    else:
+        payload["conditions"] = normalize_conditions(conditions)
+
+
 @lru_cache(maxsize=1)
 def _publisher_sites() -> dict[str, str]:
     from .config import load_sources
@@ -506,8 +515,8 @@ class DB:
             self.meta_set("llm_ledger_migrated", "1")
         for row in self.conn.execute("SELECT id, payload, final_price FROM deals").fetchall():
             payload = json.loads(row["payload"])
-            conditions = normalize_conditions(payload.get("conditions"))
-            repaired = dict(payload, conditions=conditions)
+            repaired = dict(payload)
+            _normalize_stored_conditions(repaired)
             if not payload.get("price_published_at"):
                 latest = self.conn.execute(
                     "SELECT final_price FROM sightings WHERE deal_id=? ORDER BY seen_at DESC,id DESC LIMIT 1",
@@ -635,7 +644,7 @@ class DB:
         d = json.loads(row["payload"])
         if d.pop("_sightings_in_table", False):
             d["sightings"] = self.sightings_for(row["id"])
-        d["conditions"] = normalize_conditions(d.get("conditions"))
+        _normalize_stored_conditions(d)
         d.update({
             "id": row["id"],
             "dedupe_key": row["dedupe_key"],

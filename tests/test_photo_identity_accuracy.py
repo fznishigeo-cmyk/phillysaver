@@ -12,6 +12,16 @@ from tests.test_identity_accuracy import DISTINCT_ITEMS
 from tests.test_photos_every_deal import A, URL, product, search, search_run, seed
 
 
+@pytest.mark.parametrize("reverse", [False, True])
+def test_photo_title_rejects_conflicting_iphone_model_numbers(reverse):
+    names = ["Apple iPhone 15 128GB Unlocked Black Smartphone",
+             "Apple iPhone 16 128GB Unlocked Black Smartphone"]
+    if reverse:
+        names.reverse()
+    deal = {"item": names[0], "brand": "Apple", "final_price": 100}
+    assert photos.title_match(deal, {A: product(names[1])}, .85) == ""
+
+
 @pytest.mark.parametrize("first,second", [
     ("AA Batteries 4 Pack", "AA Batteries 8 Pack"),
     ("Acme Disposable Gloves 100 Count", "Acme Disposable Gloves 200 Count"),

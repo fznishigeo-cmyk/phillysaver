@@ -100,10 +100,12 @@ def _number_in_quote(value: float, nquote: str, text: str | None = None) -> bool
 
 _NON_CHECKOUT_SUFFIX = re.compile(
     r"^\s*(?:%|percent\b|off\b|for\s+\$|months?\b|"
-    r"(?:/\s*|per\s+)(?:mo(?:nth)?s?|years?|weeks?|days?|count|ct|units?|"
-    r"items?|oz|ounces?|lb|pounds?|ml|g|kg|ea|packs?|pieces?|each)\b|"
+    r"(?:/\s*|per\s+)(?:mo(?:nth)?s?|years?|weeks?|days?)\b|"
     r"kohl[’']?s\s+cash\b|gift[ -]?cards?\b|cash[ -]?back\b|"
     r"(?:store|statement)\s+credit\b|rewards?\b)", re.I)
+_PER_UNIT_SUFFIX = re.compile(
+    r"^\s*(?:/\s*|per\s+)(?:count|ct|units?|items?|oz|ounces?|lb|pounds?|"
+    r"ml|g|kg|ea|packs?|pieces?|each)\b", re.I)
 _NON_CHECKOUT_PREFIX = re.compile(
     r"\b(?:was|reg(?:ular(?:ly)?)?\.?|original(?:ly)?|list|msrp)"
     r"(?:\s+price)?\s*[:=]?\s*\$?\s*$|"
@@ -112,12 +114,13 @@ _NON_CHECKOUT_PREFIX = re.compile(
     r"\s*\$?\s*$", re.I)
 _RANGE_PREFIX = re.compile(
     r"\b(?:from|as\s+low\s+as|starting(?:\s+at)?|under|up\s+to)\s*\$?\s*$|"
-    r"\d[\d,.]*\s*(?:[-–—]|to)\s*\$?\s*$", re.I)
-_RANGE_SUFFIX = re.compile(r"^\s*(?:[-–—]|to\b)\s*\$?\s*\d", re.I)
+    r"(?<![\w.,])\d[\d,.]*\s*(?:[-–—]|to)\s*\$?\s*$", re.I)
+_RANGE_SUFFIX = re.compile(
+    r"^\s*(?:[-–—]|to\b)\s*\$?\s*\d[\d,.]*(?![\w.,])", re.I)
 
 
 def _checkout_number_in_quote(value: float, quote: str, text: str, *,
-                              price_is_range: bool) -> bool:
+                              price_is_range: bool, per_unit: bool) -> bool:
     """Require one matching amount in checkout context, including outside a clipped quote."""
     for occurrence in re.finditer(re.escape(quote), text):
         for candidate in _number_candidates(value):
@@ -127,6 +130,8 @@ def _checkout_number_in_quote(value: float, quote: str, text: str, *,
                     continue
                 before, after = text[:match.start()], text[match.end():]
                 if _NON_CHECKOUT_PREFIX.search(before) or _NON_CHECKOUT_SUFFIX.search(after):
+                    continue
+                if not per_unit and _PER_UNIT_SUFFIX.search(after):
                     continue
                 if not price_is_range and (_RANGE_PREFIX.search(before) or _RANGE_SUFFIX.search(after)):
                     continue
@@ -145,6 +150,8 @@ def verify_evidence(deal: ExtractedDeal, text: str) -> tuple[bool, str]:
     range deal's upper bound is a published price and is checked like one.
     """
     ntext = _norm_ws(text)
+    per_unit = all((unit or "").strip().lower() == "per_unit" for unit in
+                   (deal.regular_price_unit, deal.final_price_unit))
     checks = [
         ("regular_price", deal.regular_price, deal.evidence.regular_price_quote),
         ("final_price", deal.final_price, deal.evidence.final_price_quote),
@@ -167,7 +174,7 @@ def verify_evidence(deal: ExtractedDeal, text: str) -> tuple[bool, str]:
             return False, (f"{label}: quote {nquote!r} does not contain the "
                            f"number {value:g} on digit boundaries")
         if label in {"final_price", "price_upper_bound"} and not _checkout_number_in_quote(
-                value, nquote, ntext, price_is_range=deal.price_is_range):
+                value, nquote, ntext, price_is_range=deal.price_is_range, per_unit=per_unit):
             return False, f"{label}: number has no checkout-price context (or needs a range flag)"
         if label == "pct_off" and "%" not in nquote and "percent" not in nquote.lower():
             return False, f"pct_off: quote {nquote!r} carries no %% sign"

@@ -235,6 +235,8 @@ def _item_facts(name: str):
     models = {word for word in words if
               (any(c.isalpha() for c in word) and any(c.isdigit() for c in word))
               or (word.isdigit() and len(word) >= 4 and not 1900 <= int(word) <= 2099)}
+    # iPhone's following number names its model, unlike an unattached number.
+    models.update("iphone" + number for number in re.findall(r"\biphone\s+(\d{1,2})\b", text))
     qualifiers = {}
     for previous, word in zip(words, words[1:]):
         if word in _ITEM_QUALIFIERS:
@@ -245,8 +247,8 @@ def _item_facts(name: str):
 def item_identity_conflict(first: str, second: str) -> bool:
     """Veto conflicting stated facts; extra facts are normally unknowns.
 
-    Units compare count/capacity/size facts, models require an overlap, and
-    qualifiers compare only after a shared preceding token. Ordinals are
+    Units compare count/capacity/size facts, model families must agree, and
+    added qualifiers compare only after a shared preceding token. Ordinals are
     generations; only AirPods Pro's known line treats generation absence as
     a base model. Years, marketing numbers and missing counts do not veto.
     """
@@ -256,11 +258,24 @@ def item_identity_conflict(first: str, second: str) -> bool:
         return True
     if am and bm and am.isdisjoint(bm):
         return True
+    # A shared spec such as 1080p cannot hide C920 versus C922. Compare each
+    # stated model family as well as the full set of alphanumeric tokens.
+    def model_families(models):
+        families = {}
+        for model in models:
+            families.setdefault(re.sub(r"\d+", "#", model), set()).add(model)
+        return families
+
+    af, bf = model_families(am), model_families(bm)
+    if any(af[k].isdisjoint(bf[k]) for k in af.keys() & bf.keys()):
+        return True
     if ag and bg and ag.isdisjoint(bg):
         return True
     if ap and bp and bool(ag) != bool(bg):
         return True
-    return any(anchor in aw and anchor in bw and aq.get(anchor, set()) != bq.get(anchor, set())
+    changed = (set(aw) ^ set(bw)) & _ITEM_QUALIFIERS
+    return any(anchor in aw and anchor in bw
+               and (aq.get(anchor, set()) ^ bq.get(anchor, set())) & changed
                for anchor in aq.keys() | bq.keys())
 
 
@@ -275,7 +290,7 @@ def item_model_match(first: str, second: str) -> bool:
     if not aw or not bw or aw[0] != bw[0]:
         return False
     accessories = {"case", "cover", "replacement", "adapter", "pads", "cushions", "bundle",
-                   "for", "compatible", "fits"}
+                   "for", "compatible", "fits", "display", "stand", "lighting", "lights"}
     if set(aw) & accessories != set(bw) & accessories:
         return False
     if ap and bp and ag and ag == bg:
@@ -287,9 +302,13 @@ def item_model_match(first: str, second: str) -> bool:
         return generation_name(first) == generation_name(second)
     if not any(len(model) >= 4 for model in am & bm):
         return False
+    # LEGO's set number identifies a set even when one title omits its name.
+    if aw[0] == "lego" and any(model.isdigit() and len(model) == 5 for model in am & bm):
+        return True
 
     def product_word(name):
         text = _ITEM_UNITS.sub(" ", _item_text(name.split(",", 1)[0]))
+        text = re.sub(r"\b\d+(?:\.\d+)?[ -]?hours?\s+battery(?:\s+life)?\b", " ", text)
         text = _SIZE_COLOR_TOKENS.sub(" ", text)
         return [w for w in re.findall(r"[a-z0-9]+", text) if w.isalpha()]
 

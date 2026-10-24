@@ -29,7 +29,7 @@ from . import models, util
 
 log = logging.getLogger("dealradar.dedupe")
 
-_DEAL_FIELDS = tuple(f.name for f in dataclass_fields(models.Deal))
+_DEAL_FIELDS = tuple(f.name for f in dataclass_fields(models.Deal)) + ("_woot_condition_unknown",)
 
 
 def canonical_key(store: str, canonical_url: str, item: str) -> str:
@@ -303,7 +303,7 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
     from .http_client import extract_asin
     from .photo_recovery import identity_changes, post_identity
     from .conditions import USED_CONDITIONS, condition_class
-    from .fetch.woot import _condition_is_explicit
+    from .fetch.woot import _condition_is_explicit, _stored_condition_is_explicit
     from .verify import woot_offer_url
 
     identity = post_identity(extracted, post)
@@ -334,6 +334,7 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
         or bool(re.search(r"(?im)^\s*(?:(?:item\s+)?condition\s*:\s*(?:brand[ -]+)?new"
                           r"|brand[ -]+new)[.!]?\s*$", post.text)))
     if (existing is not None and woot_offer_url(existing) and condition_known
+            and _stored_condition_is_explicit(existing)
             and condition_class(existing.get("conditions")) != condition_class(extracted.conditions)):
         # A reused Woot URL with another condition is no reading of this offer.
         return {"deal_id": int(existing["id"]), "dedupe_key": existing["dedupe_key"],
@@ -346,7 +347,12 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
         key = canonical_key(extracted.store, extracted.product_url,
                             extracted.item)
         if not extracted.product_url and db.get_deal(key) is not None:
-            key = _identity_key(key, extracted.item)
+            identity_key = _identity_key(key, extracted.item)
+            key = identity_key
+            suffix = 2
+            while db.get_deal(key) is not None:
+                key = f"{identity_key}|{suffix}"
+                suffix += 1
         payload = _new_payload(key, extracted, savings, asin, now)
         payload["online_only_published_at"] = (
             util.iso(post_at) if extracted.online_only in ("true", "false") else "")
@@ -443,9 +449,17 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
                 payload[field] = getattr(extracted, field)
 
         incoming_conditions = extracted.conditions
-        if woot_offer_url(existing) and not condition_known:
-            incoming_conditions = [c for c in incoming_conditions if c not in USED_CONDITIONS]
-        payload["conditions"] = _union(existing.get("conditions"), incoming_conditions)
+        if woot_offer_url(existing):
+            if condition_known:
+                payload.pop("_woot_condition_unknown", None)
+            else:
+                incoming_conditions = [c for c in incoming_conditions if c not in USED_CONDITIONS]
+                if not _stored_condition_is_explicit(existing):
+                    # Pricing requirements must not turn legacy unknown into new.
+                    payload["_woot_condition_unknown"] = True
+        if (not woot_offer_url(existing) or condition_known
+                or "conditions" in existing or incoming_conditions):
+            payload["conditions"] = _union(existing.get("conditions"), incoming_conditions)
 
         new_at = util.iso(post_at)
         online_at = (existing.get("online_only_published_at")
@@ -626,7 +640,7 @@ def reprice_existing(db, deal: dict[str, Any], post: models.RawPost,
     from .parse.schema import LLMDeal, to_extracted
     from .savings import compute_savings
     from .conditions import condition_class
-    from .fetch.woot import _condition_is_explicit
+    from .fetch.woot import _condition_is_explicit, _stored_condition_is_explicit
     from .verify import _price_hidden_by_promo, is_amazon_deal, is_used_deal, woot_offer_url
     from .store_prices import plain_price, store_offer
 
@@ -641,7 +655,7 @@ def reprice_existing(db, deal: dict[str, Any], post: models.RawPost,
                 and woot_offer_url(current) == woot_offer_url(
                     {"canonical_url": (post.structured or {}).get("product_url")}))
     if woot:
-        if ((_condition_is_explicit(post)
+        if ((_condition_is_explicit(post) and _stored_condition_is_explicit(current)
                 and condition_class(current.get("conditions")) != condition_class(
                     (post.structured or {}).get("conditions")))
                 or _price_hidden_by_promo(current) or current.get("gone_suspect_at")):

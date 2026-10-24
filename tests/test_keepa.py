@@ -157,6 +157,10 @@ class TestKeepaAdapter:
     @pytest.mark.parametrize("title", [
         "Headphones (Renewed)", "Headphones (Refurbished)",
         "Headphones - renewed", "Headphones refurbished",
+        "Headphones [Renewed]", "Headphones (Renewed Premium)",
+        "Headphones Renewed Premium", "Headphones [Renewed Premium] - Black",
+        "[Renewed] Headphones", "[Refurbished] Headphones",
+        "Headphones Renewed", "Headphones [Refurbished]",
         "Refurbished Headphones", "Headphones (Used)", "Headphones - Used",
         "Used Headphones", "Headphones (Open Box)", "Headphones - Open-Box",
         "Apple iPhone 12 Used - Excellent", "Lightly Used Headphones",
@@ -169,6 +173,8 @@ class TestKeepaAdapter:
         "New headphones", "Refurbished-look headphones", "Headphones used for calls",
         "Headphones (used for calls)", "Renewed-look headphones", "Unused headphones",
         "Used for calls headset", "open-box-style organizer", "Amazon Renewed-look headphones",
+        "philosophy Renewed Hope in a Jar Moisturizer", "Renewed Skin Serum",
+        "Acme Refurbished Skin Serum",
     ])
     def test_new_lane_keeps_titles_without_condition_labels(self, title):
         row = dict(_amazon_row(1), title=title)

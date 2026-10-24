@@ -59,9 +59,9 @@ def test_parse_stack_step_all_kinds():
 
 @pytest.mark.parametrize("step", ["Subscribe & Save $8.49", "Subscribe and Save $8.49"])
 def test_subscribe_save_price_is_not_an_absolute_discount(step):
-    assert parse_stack_step(step)["kind"] != "abs_off"
+    assert parse_stack_step(step) == {"kind": "unknown", "value": None}
     result = compute_savings(deal(regular_price=12.99, stack_steps=[step]))
-    assert not result.computable or result.final_price == approx(8.49)
+    assert not result.computable and result.exclude_reason == "no_basis"
 
 
 @pytest.mark.parametrize("step", ["$5 off $25", "$5 off orders of $25+"])
@@ -78,6 +78,70 @@ def test_coupon_minimum_spend_uses_the_running_item_price():
     result = compute_savings(deal(regular_price=50,
                                  stack_steps=["sale price $20", "$5 off $25"]))
     assert not result.computable
+
+
+@pytest.mark.parametrize("regular,eligible", [(50, True), (49.95, False)])
+def test_coupon_minimum_spend_uses_cents_at_percentage_boundary(regular, eligible):
+    result = compute_savings(deal(regular_price=regular,
+                                 stack_steps=["80% off", "$2 off $10 order"]))
+    assert result.computable is eligible
+    if eligible:
+        assert result.final_price == 8.00
+        assert result.pct_at_checkout == 84.0
+    else:
+        assert result.exclude_reason == "minimum_spend"
+
+
+@pytest.mark.parametrize("step,expected", [
+    ("Subscribe and save an extra $2", 10.99),
+    ("Subscribe & Save an extra $2", 10.99),
+    ("Subscribe and save $2 off", 10.99),
+    ("Subscribe & Save: save $2", 10.99),
+    ("Save $2 with Subscribe & Save", 10.99),
+    ("$2 off with Subscribe & Save", 10.99),
+    ("Extra 20% off with Subscribe & Save", 10.39),
+    ("Subscribe & Save extra 20% off", 10.39),
+])
+def test_subscription_explicit_extra_discount_is_applied(step, expected):
+    candidate = deal(regular_price=12.99, stack_steps=[step], conditions=["subscribe_save"])
+    result = compute_savings(candidate)
+    assert result.computable
+    assert result.final_price == expected
+    assert result.basis == "stack"
+    assert candidate.conditions == ["subscribe_save"]
+
+
+@pytest.mark.parametrize("regular,eligible", [(999.99, False), (1000, True), (1200, True)])
+def test_coupon_minimum_spend_keeps_thousands_separator(regular, eligible):
+    step = "$100 off orders of $1,000+"
+    assert parse_stack_step(step) == {"kind": "abs_off", "value": 100.0,
+                                      "min_spend": 1000.0}
+    result = compute_savings(deal(regular_price=regular, stack_steps=[step]))
+    assert result.computable is eligible
+    if eligible:
+        assert result.final_price == regular - 100
+    else:
+        assert result.exclude_reason == "minimum_spend"
+
+
+def test_coupon_discount_keeps_thousands_separator():
+    assert parse_stack_step("$1,000 off orders of $2,000+") == {
+        "kind": "abs_off", "value": 1000.0, "min_spend": 2000.0}
+
+
+def test_clip_percentage_coupon_then_subscription_name():
+    result = compute_savings(deal(regular_price=50,
+                                 stack_steps=["Clip 20% coupon, then Subscribe & Save"]))
+    assert result.computable
+    assert result.final_price == 40
+    assert result.pct_at_checkout == 20
+
+
+def test_order_coupon_on_item_above_minimum():
+    result = compute_savings(deal(regular_price=60, stack_steps=["$10 off $50 order"]))
+    assert result.computable
+    assert result.final_price == 50
+    assert result.pct_at_checkout == 16.7
 
 
 @pytest.mark.parametrize("step", ["Subscribe & Save $2 off", "save $2", "$2 off"])

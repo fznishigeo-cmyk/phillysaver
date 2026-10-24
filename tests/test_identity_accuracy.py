@@ -13,8 +13,11 @@ from tests.test_dedupe import NOW, make_cfg, make_extracted, make_post, make_sav
 DISTINCT_ITEMS = [
     ("Sony WH-1000XM5 Wireless Headphones", "Sony WH-1000XM4 Wireless Headphones"),
     ("Apple iPhone 15 Smartphone", "Apple iPhone 15 Pro Smartphone"),
+    ("Apple iPhone 15 128GB Unlocked Black Smartphone",
+     "Apple iPhone 16 128GB Unlocked Black Smartphone"),
     ("Apple AirPods Pro 2 Wireless Earbuds", "Apple AirPods Pro Wireless Earbuds"),
     ("Samsung Galaxy S24 Smartphone", "Samsung Galaxy S24 Ultra Smartphone"),
+    ("Samsung Galaxy S24 5G Smartphone", "Samsung Galaxy S25 5G Smartphone"),
     ("Ninja AF101 Air Fryer", "Ninja AF161 Air Fryer"),
     ("LEGO Creator 31174 Building Set", "LEGO Creator 31147 Building Set"),
     ("AA Batteries 4 Pack", "AA Batteries 8 Pack"),
@@ -25,14 +28,107 @@ DISTINCT_ITEMS = [
 SAME_ITEMS = [
     ("Sony WH-1000XM5 Wireless Headphones",
      "Sony WH-1000XM5 Noise Canceling Headphones, 30-Hour Battery, Black"),
+    ("Sony WH-1000XM5 Wireless Headphones",
+     "Sony WH-1000XM5 Wireless Headphones 30-Hour Battery"),
     ("Apple AirPods Pro 2", "Apple AirPods Pro (2nd Generation)"),
+    ("AirPods Pro (2nd Generation)", "AirPods Pro 2"),
     ("Apple AirPods Pro 2", "Apple AirPods Pro 2nd Gen with USB-C"),
     ("Apple AirPods Pro (2nd Generation)", "Apple AirPods Pro 2nd Gen with USB-C"),
     ("Crest 3D White Toothpaste 4 Pack", "Crest 3D White Toothpaste, 4 Count"),
+    ("Crest 4 Pack", "Crest, 4 Count"),
     ("Ninja AF101 Air Fryer, 4 Qt", "Ninja AF101 4-Quart Air Fryer, Grey"),
     ("Duracell AA Batteries", "Duracell AA Batteries, 8 Pack"),
     ("LEGO Creator 31174 Retro Telephone", "LEGO Creator 3-in-1 Retro Telephone 31174"),
+    ("LEGO 31174 Retro Telephone", "LEGO Creator 3-in-1 Retro Telephone 31174"),
+    ("LEGO 31174 Retro Telephone", "LEGO Creator 3-in-1 31174"),
 ]
+
+
+def test_reordered_identical_facts_merge_three_sources_and_replay():
+    names = ("Ninja AF101 Air Fryer 4 Qt", "Ninja Air Fryer AF101 4 Qt",
+             "Air Fryer Ninja AF101 4 Qt")
+    with closing(DB(":memory:")) as db:
+        results = []
+        for i, item in enumerate(names):
+            post = make_post(source=("hip2save", "slickdeals_frontpage", "krazy_coupon_lady")[i],
+                             uid=str(i), text=f"{item} for $25")
+            result = dedupe.upsert_extracted(db, make_extracted(item=item), make_savings(),
+                                            post, make_cfg(), NOW)
+            results.append(result)
+        assert len({result["deal_id"] for result in results}) == 1
+        key = "si|kohls|" + util.normalize_item(names[0])
+        assert all(result["dedupe_key"] == key for result in results)
+        assert verify.assign_tier(db, db.get_deal(key), make_cfg(), NOW) == "corroborated"
+        for i, item in enumerate(names):
+            post = make_post(source=("hip2save", "slickdeals_frontpage", "krazy_coupon_lady")[i],
+                             uid=str(i), text=f"{item} for $25")
+            replay = dedupe.upsert_extracted(db, make_extracted(item=item), make_savings(),
+                                            post, make_cfg(), NOW)
+            assert replay["deal_id"] == results[0]["deal_id"]
+        assert len(db.all_deals()) == 1
+        assert len(db.sightings_for(results[0]["deal_id"])) == db.price_stats(key)[0] == 3
+
+
+@pytest.mark.parametrize("legacy_suffix", [False, True])
+def test_reordered_facts_find_existing_legacy_keys(legacy_suffix):
+    first = "Ninja AF101 Air Fryer 4 Qt"
+    later = "Ninja Air Fryer AF101 4 Qt"
+    key = dedupe.canonical_key("Kohls", "", first)
+    if legacy_suffix:
+        key = dedupe._identity_key(key, first)
+    with closing(DB(":memory:")) as db:
+        db.insert_deal(dedupe_key=key, store="Kohls", item=first,
+                       normalized_item=util.normalize_item(first), canonical_url="",
+                       payload={"item": first, "store": "Kohls", "conditions": []},
+                       final_price=25, pct_at_checkout=75, abs_savings=75,
+                       online_only="true", expires_at="", now=NOW)
+        result = ingest(db, later, 1)
+        assert result["dedupe_key"] == key
+        assert not result["is_new_deal"]
+        assert len(db.all_deals()) == 1
+
+
+def test_occupied_identity_suffix_gets_a_free_key_and_replays():
+    """Persisted keys are opaque: a legacy row can already occupy a suffix."""
+    with closing(DB(":memory:")) as db:
+        first = ingest(db, "Duracell AA Batteries 4 Pack", 1)
+        item = "Duracell AA Batteries 8 Pack"
+        occupied = dedupe._identity_key(first["dedupe_key"], item)
+        other = "Duracell AA Batteries 12 Pack"
+        db.insert_deal(dedupe_key=occupied, store="Kohls", item=other,
+                       normalized_item=util.normalize_item(other), canonical_url="",
+                       payload={"item": other, "store": "Kohls", "conditions": []},
+                       final_price=30, pct_at_checkout=70, abs_savings=70,
+                       online_only="true", expires_at="", now=NOW)
+        result = ingest(db, item, 2)
+        assert result["is_new_deal"]
+        assert result["dedupe_key"] not in {first["dedupe_key"], occupied}
+        replay = ingest(db, item, 2)
+        assert replay["deal_id"] == result["deal_id"] and not replay["is_new_deal"]
+        assert len(db.all_deals()) == 3
+        assert db.get_deal(occupied)["final_price"] == 30
+        assert len(db.sightings_for(result["deal_id"])) == db.price_stats(result["dedupe_key"])[0] == 1
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("codes", [(), ("DEVICE20",)])
+def test_shared_resolution_cannot_hide_conflicting_webcam_models(reverse, codes):
+    offers = [("Logitech C920 1080p HD USB Desktop Webcam", 30),
+              ("Logitech C922 Pro Stream 1080p Webcam", 50)]
+    if reverse:
+        offers.reverse()
+    with closing(DB(":memory:")) as db:
+        results = []
+        for i, (item, price) in enumerate(offers):
+            post = make_post(uid=str(i), text=f"{item} ${price}")
+            post.published_at = NOW + timedelta(minutes=i)
+            results.append(dedupe.upsert_extracted(
+                db, make_extracted(item=item, codes=list(codes)),
+                make_savings(final=price), post, make_cfg(), NOW))
+        assert results[0]["deal_id"] != results[1]["deal_id"]
+        assert len(db.all_deals()) == 2
+        for result, (_, price) in zip(results, offers):
+            assert db.get_deal(result["dedupe_key"])["final_price"] == price
 
 
 @pytest.mark.parametrize("first,second", SAME_ITEMS)
@@ -94,6 +190,14 @@ def test_shared_model_does_not_merge_product_accessories(item):
     with closing(DB(":memory:")) as db:
         first = ingest(db, "Sony WH-1000XM5 Wireless Headphones", 1)
         later = ingest(db, item, 2)
+        assert later["deal_id"] != first["deal_id"]
+
+
+@pytest.mark.parametrize("accessory", ["Display Stand", "Lighting Kit"])
+def test_lego_set_number_does_not_merge_accessories(accessory):
+    with closing(DB(":memory:")) as db:
+        first = ingest(db, "LEGO 31174 Retro Telephone", 1)
+        later = ingest(db, "LEGO 31174 " + accessory, 2)
         assert later["deal_id"] != first["deal_id"]
 
 
