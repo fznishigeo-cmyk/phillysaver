@@ -217,6 +217,8 @@ def _item_facts(name: str):
     units = {}
     for match in _ITEM_UNITS.finditer(text):
         number, unit = match.groups()
+        if "." in number:
+            number = number.rstrip("0").rstrip(".")
         kind = "ct" if unit == "ct" else "capacity" if unit.endswith("b") and unit != "lb" else "size"
         units.setdefault(kind, set()).add(number + unit)
         units.setdefault("unit:" + unit, set()).add(number)
@@ -231,6 +233,10 @@ def _item_facts(name: str):
     airpods = re.search(r"\bairpods\s+pro\b(?:\s+(\d{1,2})\b)?", text)
     if airpods and airpods[1]:
         generations.add(airpods[1])
+    # Plus introducing a battery feature after the product noun or a comma
+    # is connective wording. Plus beside a brand/model remains a qualifier.
+    text = re.sub(r"(\bheadphones\s+|,\s*)plus(?=\s+\d+(?:\.\d+)?[ -]?hours?\s+battery\b)",
+                  r"\1", text)
     words = re.findall(r"[a-z0-9]+", text)
     models = {word for word in words if
               (any(c.isalpha() for c in word) and any(c.isdigit() for c in word))

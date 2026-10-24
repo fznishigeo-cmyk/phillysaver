@@ -186,6 +186,51 @@ def test_checkout_amount_still_passes_among_other_numbers(text, value):
     assert verify_evidence(candidate, text) == (True, "")
 
 
+@pytest.mark.parametrize("currency", ["$", "$ "])
+@pytest.mark.parametrize("clipped", [False, True])
+def test_pay_amount_for_stated_value_is_checkout_price(currency, clipped):
+    text = f"Pay {currency}25 for $50 worth of food"
+    candidate = make_deal(
+        regular_price=50, final_price=25,
+        evidence=Evidence(regular_price_quote="$50 worth of food",
+                          final_price_quote="25" if clipped else text),
+    )
+    assert verify_evidence(candidate, text) == (True, "")
+    result = compute_savings(candidate)
+    assert result.computable and result.final_price == 25 and result.pct_at_checkout == 50
+
+
+@pytest.mark.parametrize("text", [
+    "Pringles Original $1.49 (was $2.99)",
+    "Pringles Original $1.49 now at Target (was $2.99)",
+])
+@pytest.mark.parametrize("clipped", [False, True])
+def test_original_product_variant_is_not_a_regular_price_label(text, clipped):
+    candidate = make_deal(
+        item="Pringles Original", regular_price=2.99, final_price=1.49,
+        evidence=Evidence(regular_price_quote="was $2.99",
+                          final_price_quote="1.49" if clipped else text),
+    )
+    assert verify_evidence(candidate, text) == (True, "")
+
+
+@pytest.mark.parametrize("text", [
+    "Original $2.99, now $1.49",
+    "Pringles: original $2.99, now $1.49",
+    "Pringles Original price $2.99, now $1.49",
+    "Pringles original: $2.99, now $1.49",
+    "Pringles originally $2.99, now $1.49",
+    "Pringles original $2.99, now $1.49",
+])
+@pytest.mark.parametrize("clipped", [False, True])
+def test_original_comparison_price_still_rejected_as_checkout(text, clipped):
+    candidate = make_deal(
+        final_price=2.99,
+        evidence=Evidence(final_price_quote="2.99" if clipped else text),
+    )
+    assert not verify_evidence(candidate, text)[0]
+
+
 @pytest.mark.parametrize("text", ["from $9.99 up to $19.99", "$9.99 - $19.99"])
 def test_explicitly_flagged_range_keeps_verified_bounds(text):
     candidate = make_deal(final_price=9.99, price_is_range=True, price_upper_bound=19.99,

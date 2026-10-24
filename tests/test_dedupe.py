@@ -335,6 +335,35 @@ def test_new_sighting_revives_a_dead_deal(tmp_path) -> None:
     db.close()
 
 
+def test_dead_identity_suffix_survives_base_row_cleanup_and_replay(tmp_path) -> None:
+    db = DB(tmp_path / "state.db")
+    cfg = make_cfg()
+    base = dedupe.upsert_extracted(
+        db, make_extracted(item="Duracell AA Batteries 4 Pack"), make_savings(),
+        make_post(uid="4-pack"), cfg, NOW)
+    ext = make_extracted(item="Duracell AA Batteries 8 Pack")
+    original = dedupe.upsert_extracted(
+        db, ext, make_savings(), make_post(uid="8-pack"), cfg, NOW)
+    key = original["dedupe_key"]
+    assert key == base["dedupe_key"] + "|identity|8ct"
+    db.update_deal(key, status="dead", payload=dict(
+        db.get_deal(key), death="confirmed", died_at=util.iso(NOW)))
+    db.conn.execute("DELETE FROM deals WHERE id=?", (base["deal_id"],))
+    db.conn.commit()
+
+    later = NOW + timedelta(minutes=15)
+    post = dataclasses.replace(make_post(uid="8-pack-return"), published_at=later)
+    result = dedupe.upsert_extracted(db, ext, make_savings(), post, cfg, later)
+    assert result["deal_id"] == original["deal_id"]
+    assert result["dedupe_key"] == key and not result["is_new_deal"]
+    assert result["revived"] and db.get_deal(key)["status"] == "alive"
+    replay = dedupe.upsert_extracted(db, ext, make_savings(), post, cfg, later)
+    assert replay["deal_id"] == original["deal_id"] and not replay["revived"]
+    assert len(db.all_deals()) == 1
+    assert len(db.sightings_for(original["deal_id"])) == db.price_stats(key)[0] == 2
+    db.close()
+
+
 def test_dearer_sighting_never_revives_a_dead_deal(tmp_path) -> None:
     """A dead $50 deal re-posted at $180 backs no stored price: the
     sighting is recorded, the deal stays dead at $50. Within the recheck's

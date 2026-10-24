@@ -99,7 +99,7 @@ def _number_in_quote(value: float, nquote: str, text: str | None = None) -> bool
 
 
 _NON_CHECKOUT_SUFFIX = re.compile(
-    r"^\s*(?:%|percent\b|off\b|for\s+\$|months?\b|"
+    r"^\s*(?:%|percent\b|off\b|months?\b|"
     r"(?:/\s*|per\s+)(?:mo(?:nth)?s?|years?|weeks?|days?)\b|"
     r"kohl[’']?s\s+cash\b|gift[ -]?cards?\b|cash[ -]?back\b|"
     r"(?:store|statement)\s+credit\b|rewards?\b)", re.I)
@@ -107,8 +107,9 @@ _PER_UNIT_SUFFIX = re.compile(
     r"^\s*(?:/\s*|per\s+)(?:count|ct|units?|items?|oz|ounces?|lb|pounds?|"
     r"ml|g|kg|ea|packs?|pieces?|each)\b", re.I)
 _NON_CHECKOUT_PREFIX = re.compile(
-    r"\b(?:was|reg(?:ular(?:ly)?)?\.?|original(?:ly)?|list|msrp)"
+    r"\b(?:was|reg(?:ular(?:ly)?)?\.?|originally|original(?=\s+price\b|\s*[:=])|list|msrp)"
     r"(?:\s+price)?\s*[:=]?\s*\$?\s*$|"
+    r"(?:^|[,;:(\[.!?–—-])\s*original\s*\$?\s*$|"
     r"\boff\s+(?:(?:on\s+)?(?:orders?|purchases?)\s+(?:(?:of|over)\s+)?)?\$?\s*$|"
     r"\b(?:spend|minimum|orders?\s+(?:of|over)|free\s+(?:shipping\s+)?over)"
     r"\s*\$?\s*$", re.I)
@@ -130,6 +131,15 @@ def _checkout_number_in_quote(value: float, quote: str, text: str, *,
                     continue
                 before, after = text[:match.start()], text[match.end():]
                 if _NON_CHECKOUT_PREFIX.search(before) or _NON_CHECKOUT_SUFFIX.search(after):
+                    continue
+                # A quantity has no currency marker; "$25 for $50 worth" is a price.
+                if not before.rstrip().endswith("$") and re.match(r"\s*for\s+\$", after, re.I):
+                    continue
+                # Bare "Original" may finish a product name. A following current
+                # price label establishes comparison-price context instead.
+                if re.search(r"\boriginal\s*\$?\s*$", before, re.I) and re.match(
+                        r"\s*[,;:(\[]*\s*(?:now|sale(?:\s+price)?)\s*[:=]?\s*\$?\s*\d",
+                        after, re.I):
                     continue
                 if not per_unit and _PER_UNIT_SUFFIX.search(after):
                     continue

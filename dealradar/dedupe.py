@@ -108,7 +108,7 @@ def find_existing(db, store: str, canonical_url: str, item: str,
     hit = db.get_deal(key)
     if hit is not None and (canonical_url or not util.item_identity_conflict(item, hit["item"])):
         return hit
-    if hit is not None and not canonical_url:
+    if not canonical_url:
         hit = db.get_deal(_identity_key(key, item))
         if hit is not None and not util.item_identity_conflict(item, hit["item"]):
             return hit
@@ -331,8 +331,10 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
         condition_class(extracted.conditions) != "new"
         or any(re.fullmatch(r"(?:brand[\s_-]+)?new", str(c), re.I)
                for c in extracted.conditions)
-        or bool(re.search(r"(?im)^\s*(?:(?:item\s+)?condition\s*:\s*(?:brand[ -]+)?new"
-                          r"|brand[ -]+new)[.!]?\s*$", post.text)))
+        # A roundup's whole-post label may describe a different product.
+        or (len(post.parsed) <= 1 and bool(re.search(
+            r"(?im)^\s*(?:(?:item\s+)?condition\s*:\s*(?:brand[ -]+)?new"
+            r"|brand[ -]+new)[.!]?\s*$", post.text))))
     if (existing is not None and woot_offer_url(existing) and condition_known
             and _stored_condition_is_explicit(existing)
             and condition_class(existing.get("conditions")) != condition_class(extracted.conditions)):

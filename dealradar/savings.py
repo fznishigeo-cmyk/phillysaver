@@ -126,7 +126,7 @@ _REBATE_RE = re.compile(r"\brebates?\b|\bmir\b|mail[\s-]?in")
 _DEFERRED_RE = re.compile(
     r"cash[\s-]?back|gift[\s-]?card|store\s+credit|statement\s+credit|portal")
 _SALE_RE = re.compile(r"\b(?:sale|now|price)\b")
-_ABS_OFF_RE = re.compile(r"\b(?:off|coupon|clip|discount|save)\b")
+_ABS_OFF_RE = re.compile(r"\b(?:off|coupon|clip|discount|saves?)\b")
 # Strip the service name, but retain explicit "save an extra $X" wording.
 _SUBSCRIBE_SAVE_RE = re.compile(
     r"\bsubscribe\s*(?:&|and|\+)\s*save\b(?!\s+(?:an\s+)?extra\s+\$)")
@@ -399,7 +399,9 @@ def compute_savings(d: models.ExtractedDeal, *, allow_price_only: bool = False) 
         elif step["kind"] == "deferred" and "deferred_value" not in flags:
             flags.append("deferred_value")
 
-    if (d.final_price is None and any("min_spend" in step for step in checkout_steps)
+    has_stated_final = (d.final_price is not None
+                        or (d.price_is_range and d.price_upper_bound is not None))
+    if (not has_stated_final and any("min_spend" in step for step in checkout_steps)
             and (d.regular_price is None or d.deal_type)):
         # A scale-free percentage or structural deal cannot prove dollar spend.
         return models.SavingsResult(computable=False, exclude_reason="minimum_spend")

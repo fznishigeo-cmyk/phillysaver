@@ -532,6 +532,62 @@ def test_rerun_is_idempotent(env, capsys, audit_mode):
     assert json.loads((env["site"].parent / "indexnow_urls.json").read_text()) == []
 
 
+def test_legacy_key_without_condition_resighted_twice_in_same_run(env, monkeypatch):
+    from datetime import timedelta
+
+    from dealradar import dedupe, util
+    from dealradar.models import RawPost
+
+    item = "Mega Headphones X200"
+    key = "si|woot|headphones mega x200"
+    url = "https://www.woot.com/offers/mega-headphones-x200"
+    db = DB(env["db"])
+    original_id = db.insert_deal(
+        dedupe_key=key, store="Woot", item=item, normalized_item=util.normalize_item(item),
+        canonical_url="", payload={"item": item, "store": "Woot", "regular_price": 199.99,
+                                   "category": "electronics", "flags": []},
+        final_price=59.99, pct_at_checkout=70, abs_savings=140,
+        online_only="true", expires_at="", now=NOW - timedelta(days=1))
+    assert "conditions" not in db.get_deal(key)
+    db.close()
+
+    post = RawPost(
+        source_name="blogone", uid="legacy-woot-headphones",
+        url="https://blogone.example/legacy-woot-headphones", title=item,
+        text=f"{item} at Woot. Refurbished. List price $199.99; now $49.99. {url}",
+        published_at=NOW, fetched_at=NOW,
+        # A real source recheck reaches intake even with the same known hash.
+        price_recheck=True)
+    monkeypatch.setattr(pipeline, "_fetch_all", lambda *args, **kwargs: ([post], {}))
+    monkeypatch.setattr("tests.test_e2e_offline._canned_deals", lambda text: [dict(
+        item=item, store="Woot", product_url=url, online_only="true",
+        regular_price=199.99, final_price=49.99, conditions=["refurbished"],
+        confidence=0.95, category="electronics",
+        evidence=dict(regular_price_quote="List price $199.99",
+                      final_price_quote="now $49.99"))])
+    upsert = dedupe.upsert_extracted
+    results = []
+
+    def track_upsert(*args, **kwargs):
+        result = upsert(*args, **kwargs)
+        results.append(result)
+        return result
+
+    monkeypatch.setattr(dedupe, "upsert_extracted", track_upsert)
+    first, second = _run(env), _run(env)
+    assert first["run_key"] == second["run_key"]
+    assert len(results) == 2 and not any(result["is_new_deal"] for result in results)
+    assert {result["deal_id"] for result in results} == {original_id}
+    assert {result["dedupe_key"] for result in results} == {key}
+    db = DB(env["db"])
+    assert len(db.all_deals()) == 1
+    row = db.get_deal(key)
+    assert row["canonical_url"] == url and row["final_price"] == 49.99
+    assert row["conditions"] == ["refurbished"]
+    assert len(db.sightings_for(original_id)) == db.price_stats(key)[0] == 1
+    db.close()
+
+
 @pytest.mark.parametrize("audit_mode", ["shadow", "enforce"])
 def test_posted_pruned_rerun_is_idempotent(env, capsys, audit_mode):
     test_rerun_is_idempotent(dict(env, pruned_post=True), capsys, audit_mode)

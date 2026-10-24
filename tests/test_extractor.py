@@ -13,6 +13,7 @@ from dealradar.errors import SpendCapReached
 from dealradar.models import RawPost
 from dealradar.parse.extractor import clean_for_llm, parse_posts, resolve_expires
 from dealradar.parse.schema import LLMDeal, LLMEvidence
+from dealradar.savings import compute_savings
 
 FIXTURES = Path(__file__).parent / "fixtures"
 NOW = datetime(2026, 10, 9, 12, 0, 0, tzinfo=timezone.utc)
@@ -167,6 +168,36 @@ def good_deal(final_quote: str = "now $10.00") -> LLMDeal:
 
 
 class TestParsePosts:
+    @pytest.mark.parametrize("clipped", [False, True])
+    def test_pay_for_stated_value_survives_evidence_and_keeps_half_off(self, clipped):
+        text = "Pay $25 for $50 worth of food"
+        candidate = LLMDeal(
+            item="Food voucher", store="Restaurant", regular_price=50, final_price=25,
+            evidence=LLMEvidence(regular_price_quote="$50 worth of food",
+                                 final_price_quote="$25" if clipped else text),
+        )
+        parser = FakeParser(results=[[candidate]])
+        pairs, stats = parse_posts([make_post(text=text)], parser, make_cfg(), NOW, {})
+        assert len(pairs) == 1
+        assert stats["deals_dropped_evidence"] == 0
+        result = compute_savings(pairs[0][1])
+        assert result.computable and result.final_price == 25 and result.pct_at_checkout == 50
+
+    @pytest.mark.parametrize("clipped", [False, True])
+    def test_original_product_variant_survives_evidence(self, clipped):
+        text = "Pringles Original $1.49 (was $2.99)"
+        candidate = LLMDeal(
+            item="Pringles Original", store="Target", regular_price=2.99, final_price=1.49,
+            evidence=LLMEvidence(regular_price_quote="was $2.99",
+                                 final_price_quote="$1.49" if clipped else text),
+        )
+        parser = FakeParser(results=[[candidate]])
+        pairs, stats = parse_posts([make_post(text=text)], parser, make_cfg(), NOW, {})
+        assert len(pairs) == 1
+        assert stats["deals_dropped_evidence"] == 0
+        result = compute_savings(pairs[0][1])
+        assert result.computable and result.final_price == 1.49 and result.pct_at_checkout == 50.2
+
     def test_happy_path_single_post(self):
         parser = FakeParser(results=[[good_deal()]], spend_usd=0.05)
         posts = [make_post()]

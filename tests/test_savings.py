@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from dealradar.models import ExtractedDeal
+from dealradar.models import Evidence, ExtractedDeal
+from dealradar.parse.extractor import verify_evidence
 from dealradar.savings import compute_savings, parse_shipping, parse_stack_step
 
 
@@ -57,6 +58,21 @@ def test_parse_stack_step_all_kinds():
     assert parse_stack_step("stack with cartwheel maybe") == {"kind": "unknown", "value": None}
 
 
+def test_evidenced_code_saves_dollars_after_sale_price():
+    text = "reg $100; sale price $50; code TAKE10 saves $10"
+    candidate = deal(regular_price=100,
+                     stack_steps=["sale price $50", "code TAKE10 saves $10"],
+                     codes=["TAKE10"],
+                     evidence=Evidence(regular_price_quote="reg $100"))
+    assert verify_evidence(candidate, text) == (True, "")
+    result = compute_savings(candidate)
+    assert result.computable
+    assert result.final_price == 40
+    assert result.pct_at_checkout == 60
+    assert result.abs_savings == 60
+    assert result.basis == "stack"
+
+
 @pytest.mark.parametrize("step", ["Subscribe & Save $8.49", "Subscribe and Save $8.49"])
 def test_subscribe_save_price_is_not_an_absolute_discount(step):
     assert parse_stack_step(step) == {"kind": "unknown", "value": None}
@@ -78,6 +94,33 @@ def test_coupon_minimum_spend_uses_the_running_item_price():
     result = compute_savings(deal(regular_price=50,
                                  stack_steps=["sale price $20", "$5 off $25"]))
     assert not result.computable
+
+
+def test_verified_range_upper_bound_is_stated_final_for_minimum_spend():
+    text = "50% off; checkout prices under $60 with $10 off $50"
+    candidate = deal(pct_off=50, price_is_range=True, price_upper_bound=60,
+                     stack_steps=["$10 off $50"],
+                     evidence=Evidence(pct_quote="50% off",
+                                       price_upper_bound_quote="under $60"))
+    assert verify_evidence(candidate, text) == (True, "")
+    result = compute_savings(candidate)
+    assert result.computable
+    assert result.final_price == 60
+    assert result.pct_at_checkout == 50
+    assert result.abs_savings is None
+    assert result.basis == "list_price_claim"
+    assert "range" in result.flags
+    assert candidate.final_price is None
+
+
+@pytest.mark.parametrize("range_fields", [
+    {}, {"price_is_range": True}, {"price_upper_bound": 60},
+])
+def test_minimum_spend_without_stated_final_or_flagged_upper_bound_stays_excluded(range_fields):
+    result = compute_savings(deal(pct_off=50, stack_steps=["$10 off $50"],
+                                 **range_fields))
+    assert not result.computable
+    assert result.exclude_reason == "minimum_spend"
 
 
 @pytest.mark.parametrize("regular,eligible", [(50, True), (49.95, False)])

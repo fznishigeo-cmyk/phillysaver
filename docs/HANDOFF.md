@@ -244,6 +244,29 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Accuracy regression round 2 (2026-10-24; uncommitted, HEAD `9ee8723`):**
+  Preserved round 1 and reproduced all eight additional regressions before
+  fixing them. `saves $X` applies as a coupon without changing Subscribe & Save
+  handling; a flagged, evidenced range upper bound counts as a stated final
+  before the minimum-spend guard. Dollar-denominated pay-for-value prices and
+  product-name "Original" survive evidence checks; quantities and explicit
+  former-price labels remain rejected. Decimal unit spellings compare equally
+  without changing stored key material, and connective battery-feature "plus"
+  no longer acts as a model qualifier; real Plus models remain separate.
+  Partner roundup condition fields stay product-specific; whole-post New
+  inference is limited to single-product posts. Deterministic identity suffixes
+  are looked up even after the base row is deleted, preserving dead-row IDs,
+  revival, sightings and history. New full-pipeline replay starts with a legacy
+  name key and no stored condition, reaches intake twice with the same run key,
+  and records zero new deals, one sighting and one history entry. Both existing
+  offline idempotency modes also pass. Focused dedupe/Woot checks: **219 passed**;
+  the three pipeline replay cases: **3 passed**; identity/photo neighbors:
+  **382 passed**. Final requested files plus pipeline tests: **1,027 passed in
+  178.04s**, `-n 3 -p no:cacheprovider` (`/tmp/accuracy-round2-final.log`).
+  Every run used at most three workers total. Evidence verification and
+  condition locks remain enforced, and `git diff --check` passes. No live
+  calls, commit, push or production-state changes. Remaining: operator review
+  of the uncommitted diff.
 - **Accuracy regression follow-up (2026-10-24; uncommitted, HEAD `2b98ac3`):**
   Preserved the partial run's evidence/savings fixes and repaired the ten review
   regressions. Identical reordered qualifier facts no longer veto dedupe;

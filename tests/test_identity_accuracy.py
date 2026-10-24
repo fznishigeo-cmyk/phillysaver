@@ -88,6 +88,99 @@ def test_reordered_facts_find_existing_legacy_keys(legacy_suffix):
         assert len(db.all_deals()) == 1
 
 
+@pytest.mark.parametrize("first,second,old_facts", [
+    ("HP 14 inch Laptop", "HP 14.0 inch Laptop", ("14in", "14.0in")),
+    ("CeraVe Moisturizing Cream 16 oz", "CeraVe Moisturizing Cream 16.0 oz", ("16oz", "16.0oz")),
+])
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("legacy_suffix", [False, True])
+def test_equivalent_decimal_units_reuse_stored_key(first, second, old_facts, reverse, legacy_suffix):
+    if reverse:
+        first, second = second, first
+    key = dedupe.canonical_key("Kohls", "", first)
+    if legacy_suffix:
+        # These suffixes were written before decimal spellings were canonical.
+        key += "|identity|" + old_facts[reverse]
+    with closing(DB(":memory:")) as db:
+        original_id = db.insert_deal(
+            dedupe_key=key, store="Kohls", item=first,
+            normalized_item=util.normalize_item(first), canonical_url="",
+            payload={"item": first, "store": "Kohls", "conditions": []},
+            final_price=25, pct_at_checkout=75, abs_savings=75,
+            online_only="true", expires_at="", now=NOW)
+        result = ingest(db, second, 1)
+        assert result["deal_id"] == original_id
+        assert result["dedupe_key"] == key
+        assert not result["is_new_deal"]
+        replay = ingest(db, second, 1)
+        assert replay["deal_id"] == original_id
+        assert len(db.all_deals()) == 1
+        assert len(db.sightings_for(original_id)) == db.price_stats(key)[0] == 1
+
+
+@pytest.mark.parametrize("first,second", [
+    ("HP 14.0 inch Laptop", "HP 14.1 inch Laptop"),
+    ("CeraVe Moisturizing Cream 16.0 oz", "CeraVe Moisturizing Cream 16.1 oz"),
+])
+def test_different_decimal_units_keep_separate_prices(first, second):
+    with closing(DB(":memory:")) as db:
+        original = ingest(db, first, 1, ("DEVICE20",))
+        later = ingest(db, second, 2, ("DEVICE20",))
+        assert original["deal_id"] != later["deal_id"]
+        assert db.get_deal(original["dedupe_key"])["final_price"] == 21.0
+        assert db.get_deal(later["dedupe_key"])["final_price"] == 22.0
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("codes", [(), ("DEVICE20",)], ids=["fuzzy", "shared-code"])
+@pytest.mark.parametrize("separator", [", ", " "])
+def test_connective_plus_battery_feature_merges_and_replays(reverse, codes, separator):
+    names = ["Sony WH-1000XM5 Wireless Headphones, 30-Hour Battery",
+             f"Sony WH-1000XM5 Wireless Headphones{separator}plus 30-Hour Battery"]
+    if reverse:
+        names.reverse()
+    with closing(DB(":memory:")) as db:
+        results = []
+        for index, item in enumerate(names):
+            post = make_post(source=("hip2save", "slickdeals_frontpage")[index],
+                             uid=str(index), text=f"{item} for $25")
+            result = dedupe.upsert_extracted(
+                db, make_extracted(item=item, codes=list(codes)), make_savings(),
+                post, make_cfg(), NOW)
+            results.append(result)
+        assert results[0]["deal_id"] == results[1]["deal_id"]
+        key = results[0]["dedupe_key"]
+        assert key == "si|kohls|" + util.normalize_item(names[0])
+        assert verify.assign_tier(db, db.get_deal(key), make_cfg(), NOW) == "corroborated"
+        for index, item in enumerate(names):
+            post = make_post(source=("hip2save", "slickdeals_frontpage")[index],
+                             uid=str(index), text=f"{item} for $25")
+            replay = dedupe.upsert_extracted(
+                db, make_extracted(item=item, codes=list(codes)), make_savings(),
+                post, make_cfg(), NOW)
+            assert replay["dedupe_key"] == key
+        assert len(db.all_deals()) == 1
+        assert len(db.sightings_for(results[0]["deal_id"])) == db.price_stats(key)[0] == 2
+
+
+@pytest.mark.parametrize("first,second", [
+    ("Sony WH-1000XM5 Wireless Headphones, plus 30-Hour Battery",
+     "Sony WH-1000XM5 Plus Wireless Headphones, plus 30-Hour Battery"),
+    ("Samsung Galaxy S24 Smartphone, 30-Hour Battery",
+     "Samsung Galaxy S24 Plus Smartphone, plus 30-Hour Battery"),
+])
+@pytest.mark.parametrize("reverse", [False, True])
+def test_connective_battery_feature_keeps_real_plus_model(first, second, reverse):
+    if reverse:
+        first, second = second, first
+    with closing(DB(":memory:")) as db:
+        original = ingest(db, first, 1, ("DEVICE20",))
+        later = ingest(db, second, 2, ("DEVICE20",))
+        assert original["deal_id"] != later["deal_id"]
+        assert db.get_deal(original["dedupe_key"])["final_price"] == 21.0
+        assert db.get_deal(later["dedupe_key"])["final_price"] == 22.0
+
+
 def test_occupied_identity_suffix_gets_a_free_key_and_replays():
     """Persisted keys are opaque: a legacy row can already occupy a suffix."""
     with closing(DB(":memory:")) as db:

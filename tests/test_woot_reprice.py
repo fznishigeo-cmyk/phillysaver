@@ -500,6 +500,37 @@ def test_partner_intake_requires_explicit_new_condition(db, cfg, conditions, con
         assert after["final_price"] == 25 and after["conditions"] == before["conditions"]
 
 
+@pytest.mark.parametrize("condition_text", ["Condition: New", "Brand new"])
+@pytest.mark.parametrize("headphones_explicitly_new", [False, True])
+def test_partner_roundup_condition_belongs_to_each_product(
+        db, cfg, condition_text, headphones_explicitly_new):
+    before = stored(db, cfg, key="headphones", price=50,
+                    item="Sony WH-1000XM5 Wireless Headphones", conditions=["refurbished"])
+    initial = counts(db)
+    post = woot.WootAdapter._map_item(offer(40, 100, StartDate=util.iso(NOW),
+        Url=before["canonical_url"], Title=before["item"]), SRC, NOW)
+    ext = to_extracted(LLMDeal.model_validate(post.structured), post, "UTC", NOW)
+    ext.conditions = ["new"] if headphones_explicitly_new else []
+    post.source_name = "hip2save"
+    post.structured = None
+    post.text = "\n".join(["USB Cable", "Sale price: $5.00", condition_text, "",
+                           before["item"], "Sale price: $40.00", "List price: $100.00"]
+                          + ([condition_text] if headphones_explicitly_new else []))
+    post.parsed = [("USB Cable", "https://www.woot.com/offers/cable"),
+                   (ext.item, ext.product_url)]
+    assert verify_evidence(ext, post.text)[0]
+    for _ in range(2):
+        result = dedupe.upsert_extracted(db, ext, savings.compute_savings(ext), post, cfg, NOW)
+        after = db.get_deal(before["dedupe_key"])
+        assert result["deal_id"] == before["id"] and not result["is_new_deal"]
+        if headphones_explicitly_new:
+            assert after == before and counts(db) == initial
+        else:
+            assert after["final_price"] == 40 and after["conditions"] == ["refurbished"]
+            assert counts(db) == dict(initial, sightings=initial["sightings"] + 1,
+                                     price_history=initial["price_history"] + 1)
+
+
 @pytest.mark.parametrize("broken", ["quote", "identity", "source"])
 @pytest.mark.parametrize("condition", ["New", ""])
 def test_shared_reprice_still_requires_api_evidence_and_matching_offer(db, cfg, broken, condition):
