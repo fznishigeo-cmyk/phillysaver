@@ -434,6 +434,8 @@ class AppConfig:
     keep_first_cards: bool = False     # the module's first render patches the server's cards in place
     best_today_tab: bool = False       # a "Best today" link pill after Trending in the home tab row
     phone_first_screen: bool = False   # phones: the first deals and their buttons on the first screen
+    short_cards: bool = False          # deal cards: no repeated headline sentence, titles in two lines
+    best_today_phone_cards: bool = False  # /best-deals-today/ phones: the home page's phone card layout
     search_circle: bool = False
     search_analyze: dict = field(default_factory=lambda: validated_search_analyze(None))
     analyze_top_sellers: bool = False
@@ -1359,6 +1361,10 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.phone_first_screen = g("phone_first_screen", default=False)
     if type(cfg.phone_first_screen) is not bool:
         raise ValueError("phone_first_screen must be a boolean")
+    for name in ("short_cards", "best_today_phone_cards"):
+        setattr(cfg, name, g(name, default=False))
+        if type(getattr(cfg, name)) is not bool:
+            raise ValueError(f"{name} must be a boolean")
     cfg.search_circle = g("search_circle", default=False)
     if type(cfg.search_circle) is not bool:
         raise ValueError("search_circle must be a boolean")

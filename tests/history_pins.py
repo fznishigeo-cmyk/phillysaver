@@ -456,6 +456,8 @@ def pre_task_319_raw(config):
     config.pop("keep_first_cards", None)
     config.pop("best_today_tab", None)
     config.pop("phone_first_screen", None)
+    config.pop("short_cards", None)
+    config.pop("best_today_phone_cards", None)
     config.pop("price_shipping_note", None)
     config.pop("add_to_cart", None)
     pre_social_profiles_raw(config)
@@ -545,6 +547,8 @@ def pre_hide_deal_site_links_raw(config):
     config.pop("keep_first_cards", None)
     config.pop("best_today_tab", None)
     config.pop("phone_first_screen", None)
+    config.pop("short_cards", None)
+    config.pop("best_today_phone_cards", None)
     config.pop("price_shipping_note", None)
     config.pop("add_to_cart", None)
     pre_social_profiles_raw(config)
@@ -572,6 +576,8 @@ def pre_keepa_focus_finder_raw(config):
     config.pop("keep_first_cards", None)
     config.pop("best_today_tab", None)
     config.pop("phone_first_screen", None)
+    config.pop("short_cards", None)
+    config.pop("best_today_phone_cards", None)
     config.pop("price_shipping_note", None)
     config.pop("add_to_cart", None)
     pre_social_profiles_raw(config)
@@ -657,6 +663,8 @@ def pre_keepa_starter_raw(config):
     config.pop("keep_first_cards", None)
     config.pop("best_today_tab", None)
     config.pop("phone_first_screen", None)
+    config.pop("short_cards", None)
+    config.pop("best_today_phone_cards", None)
     config.pop("price_shipping_note", None)
     config.pop("add_to_cart", None)
     pre_social_profiles_raw(config)
@@ -730,6 +738,8 @@ def pre_social_profiles(cfg):
     pre_keep_first_cards(cfg)
     pre_best_today_tab(cfg)
     pre_phone_first_screen(cfg)
+    pre_short_cards(cfg)
+    pre_best_today_phone_cards(cfg)
     return cfg
 
 
@@ -766,6 +776,18 @@ def pre_best_today_tab(cfg):
 def pre_phone_first_screen(cfg):
     """Before phones showed the first deals and their buttons on the first screen (operator 2026-10-23)."""
     cfg.phone_first_screen = False
+    return cfg
+
+
+def pre_short_cards(cfg):
+    """Before the shorter deal cards: no headline, steps and "Enter Code" lines, smaller Get deal (operator 2026-10-24, A58)."""
+    cfg.short_cards = False
+    return cfg
+
+
+def pre_best_today_phone_cards(cfg):
+    """Before /best-deals-today/ showed the home page's phone cards (operator 2026-10-24)."""
+    cfg.best_today_phone_cards = False
     return cfg
 
 

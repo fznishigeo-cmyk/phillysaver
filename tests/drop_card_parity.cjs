@@ -11,7 +11,7 @@ if (home.includes('  function hotSignals('))
   vm.runInContext(fragment('  function hotSignals(', '  function surpriseRows('), ctx);
 else ctx.hotHtml = () => '';
 const normalize = s => s.replace(/&#x27;/g, '&#39;');
-for (const {row, meta, how, steps} of cases) {
+for (const {row, meta, how, steps, lines} of cases) {
   // Hydration after the hot meter's two-hour boundary still matches publication.
   ctx.Date.now = () => Date.parse(doc.meta.generated_at) + 3 * 3600000;
   const card = ctx.cardHtml(row);
@@ -20,5 +20,8 @@ for (const {row, meta, how, steps} of cases) {
   if (how !== undefined) assert.equal(normalize((card.match(/<div class="how".*?<\/div>/s) || [''])[0]), normalize(how), row.key);
   // phone_first_screen: the static cards draw the script's "How to get this price" link.
   if (steps !== undefined) assert.equal((card.match(/<a class="deal-steps".*?<\/a>/s) || [''])[0], steps, row.key);
+  // short_cards: the steps line and the "Enter Code: X at checkout" line.
+  if (lines !== undefined) assert.equal(normalize(['how-line', 'code-line'].map(c =>
+    (card.match(new RegExp('<div class="' + c + '">.*?</div>', 's')) || [''])[0]).join('')), normalize(lines), row.key);
 }
 console.log('Static and hydrated metarows match');
