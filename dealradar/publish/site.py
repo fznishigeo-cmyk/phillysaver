@@ -7,6 +7,7 @@ are written — never full post text or images.
 
 from __future__ import annotations
 
+import copy
 import json
 import hashlib
 import logging
@@ -14,7 +15,7 @@ import re
 import shutil
 import time
 from collections import Counter
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime
 from html import escape
 from pathlib import Path
@@ -1006,7 +1007,11 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     original_picks = drop_rotation.prepare_picks(original_picks, cfg, boosted)
     from ..best_today_mix import front_page as best_front_page
     best_fp = best_front_page(cfg.front_page, now)
-    best_cfg = replace(cfg, front_page=best_fp) if best_fp is not cfg.front_page else cfg
+    # A shallow copy, not dataclasses.replace: it keeps the config as given, a missing switch included.
+    best_cfg = cfg
+    if best_fp is not cfg.front_page:
+        best_cfg = copy.copy(cfg)
+        best_cfg.front_page = best_fp
     best_extra = front_mix.extras(pick_candidates, {d["dedupe_key"] for d in original_picks}, best_cfg, now)
     picked = [public_candidates[d["dedupe_key"]] for d in original_picks]
     for n, d in enumerate(picked, 1):

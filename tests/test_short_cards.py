@@ -272,7 +272,10 @@ def test_best_today_phone_cards_on_that_page_only(sites):
     changed = {k for k, v in files(on).items() if old[k] != v}
     assert changed == {"best-deals-today/index.html", "index.html", "deals.json"}
     page = (on / phone.PAGE).read_text()
-    assert page.count(phone.CSS) == 1 and page.count(phone.CSS + "</head>") == 1
+    # Once, in the head, after the page's own (hub.html) styles; best_today_header's later styles
+    # reach only the header.
+    assert page.count(phone.CSS) == 1
+    assert page.index("</style>") < page.index(phone.CSS) < page.index("</head>")
     assert page.replace(phone.CSS, "", 1) == (off / phone.PAGE).read_text()
     assert (on / "index.html").read_text().replace(version(on), version(off)) == (off / "index.html").read_text()
     # Phones only, and only the card grid: no header, tab or page-heading rules.

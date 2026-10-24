@@ -26,7 +26,9 @@ from . import best_today_tab, phone_tagline_count, search_focus_ring
 from .template_slots import replace_slot
 
 PAGE = 'best-deals-today/index.html'
-HEADER = re.compile(r'<header>.*?</header>\n', re.S)
+# The <header> element alone: a seasonal event's links and tool_pages_1020's "line" follow the
+# home's </header> with no newline (both outside the header, as on the home page).
+HEADER = re.compile(r'<header>.*?</header>\n?', re.S)
 INSIDE, OUTSIDE = ':where(header,header *)', ':where(:not(header,header *))'
 _TOKEN = re.compile(r'([.#])(-?[_a-zA-Z][-\w]*)')
 _GROUP = re.compile(r':(not|has|is|where)\(')

@@ -113,6 +113,27 @@ def test_on_gives_the_page_the_home_header_and_nothing_else_moves(tmp_path, monk
     assert files(build(tmp_path, monkeypatch, True, "again")) == after
 
 
+@pytest.mark.parametrize("variant", ["event", "tool line"])
+def test_markup_right_after_the_home_header(tmp_path, monkeypatch, variant):
+    """A seasonal event's links (and tool_pages_1020's "line") follow the home's </header> with no
+    newline in between: the page still gets the home <header> alone (relT 10-24: the publish crashed)."""
+    monkeypatch.setattr(site, "util_now", lambda: NOW)
+    cfg = load_config()
+    if variant == "event":
+        cfg.seo_event_pages_events[0]["date"] = NOW.date().isoformat()
+    else:
+        cfg.tool_pages_1020_home_links, cfg.tool_pages_1020_phone_links, cfg.tool_buttons_outside = True, "line", False
+    (tmp_path / "site").mkdir()
+    out = render(tmp_path / "site", cfg, rows())[0]
+    home, best = (out / "index.html").read_text(), (out / BEST).read_text()
+    after = '<nav class="hrow event-links"' if variant == "event" else '<nav class="home-tools phone-tools tool-line"'
+    assert "</header>" + after in home
+    header = re.search(r"<header>.*?</header>", best, re.S)[0]
+    assert header == best_today_header.header(home, cfg, best_today_header._live(out, NOW))
+    assert '<input id="q" type="search"' in header and after not in header and "refreshed every" not in best
+    assert '<a class="cattab active" aria-current="page">Best today</a>' in header
+
+
 def test_tagline_matches_the_home_script():
     assert best_today_header.tagline(1, True) == (
         '<span id="tagline" class="tag"><span class="tag-full tag-lead">verified deals · </span>'

@@ -14,7 +14,8 @@ from pathlib import Path
 from .template_slots import replace_slot
 
 PAGE = 'best-deals-today/index.html'
-# Last in the head; the grid wins over hub.html's two-column phone grid by specificity too.
+# In the head after the page's own styles; the grid wins over hub.html's two-column phone grid by
+# specificity too (best_today_header's later styles reach only the header).
 CSS = ('<style>@media(max-width:640px){'
        '.grid:has(>.card){grid-template-columns:minmax(0,1fr);gap:8px;margin-top:4px}'
        '.grid>.card{flex-direction:row}'

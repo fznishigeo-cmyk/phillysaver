@@ -8,7 +8,7 @@ import pytest
 
 from dealradar.config import AppConfig, load_config
 from dealradar.publish import phone_tagline_count as tagline
-from tests.history_pins import pre_phone_tagline_count, pre_task_320, pre_task_290_install_raw
+from tests.history_pins import pre_best_today_header, pre_phone_tagline_count, pre_task_320, pre_task_290_install_raw
 from tests.test_pwa import tree_hash
 from tests.test_search_more import offline  # noqa: F401
 from tests.test_support import render
@@ -61,7 +61,9 @@ def test_off_missing_on_rerun_back_off_bytes(tmp_path, mode):
 @pytest.mark.parametrize('enabled', [False, True])
 @pytest.mark.parametrize('header', [False, True])
 def test_markup_css_and_actual_count_builder(tmp_path, enabled, header):
-    cfg = load_config()
+    # Recorded before /best-deals-today/ copied the home header (and this tagline with it):
+    # test_best_today_header checks that copy against the home page.
+    cfg = pre_best_today_header(load_config())
     cfg.strip_comments = False
     cfg.phone_tagline_count = False
     cfg.header_polish = header
