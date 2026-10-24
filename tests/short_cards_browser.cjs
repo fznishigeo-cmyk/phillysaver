@@ -45,7 +45,10 @@ async function measure(plainOnly) {
     // Get deal's tap target: the height around its middle where a tap still lands on it (30px each way at most).
     const reach = dir => { let n = 0; while (n < 30 && hit(b.left + 6, b.top + b.height / 2 + dir * (n + .25))?.closest('.getdeal') === buy) n += .25; return n; };
     const codeLine = card.querySelector('.code-line'), howLine = card.querySelector('.how-line'), text = visibleText(card);
-    const codes = (d.codes || []).filter(Boolean);
+    const codes = (d.codes || []).filter(Boolean), metarow = card.querySelector('.metarow');
+    // The headline's expiry date ("... Expires Oct 25."), now an "ends Oct 25" chip in the visible chip row.
+    const ends = ((/(?:^| )Expires ([A-Z][a-z]{2} \d{2})\.$/.exec(d.headline || '') || [])[1]) || null;
+    const endsChip = ends && [...card.querySelectorAll('.metarow .chip')].find(ch => ch.textContent === 'ends ' + ends);
     return {i, fully: inView(box), buyFully: shown(buy) && inView(b),
       headline: shown(card.querySelector('.headline')), badge: !!card.querySelector('.badge'),
       titleLines: lines(title), fullTitleLines: Math.round(link.scrollHeight / parseFloat(getComputedStyle(link).lineHeight) * 10) / 10,
@@ -56,8 +59,12 @@ async function measure(plainOnly) {
         !(s === '.how' && shown(card.querySelector('.deal-steps')))),
       codes, codeLine: shown(codeLine) ? codeLine.textContent : null,
       codeOnce: codes.every(c => text.split(c).length === 2), codeButtons: codeLine ? codeLine.querySelectorAll('button.code').length : 0,
-      howLine: shown(howLine) ? lines(howLine) : null,
-      needsSteps: !!(d.needs_steps || (d.checkout || {}).card) && (d.how || []).some(s => !/\bcode\b/i.test(s)),
+      howLine: shown(howLine) ? lines(howLine) : null, howText: howLine ? howLine.textContent : '',
+      howClipped: shown(howLine) ? howLine.scrollHeight > howLine.clientHeight + 1 : null,
+      // Every step that names no code shows word for word (per unit, price varies, quantity, required steps).
+      steps: d.status === 'dead' ? [] : (d.how || []).filter(s => !codes.some(c => s.includes(c))),
+      ends: d.status === 'dead' || d.spotlight ? null : ends,
+      endsShown: !!endsChip && shown(endsChip) && endsChip.getBoundingClientRect().right <= metarow.getBoundingClientRect().right + .5,
       dealSteps: shown(card.querySelector('.deal-steps')),
       left: Math.round(box.left), width: Math.round(box.width), mediaWidth: Math.round(media.width),
       mediaLeftOfBody: media.right <= body.left + .5,
@@ -148,7 +155,10 @@ const median = values => values.slice().sort((a, b) => a - b)[Math.floor(values.
         assert(o.cards.some(c => c.headline), label + ' off: the fixture shows headlines');
         if (url === BEST && width > 900) assert(o.cards.some(c => c.titleLines > 2), label + ' off: the fixture has long titles');
         for (const m of [s, b]) {
-          assert(m.cards.some(c => c.codes.length > 1) && m.cards.some(c => c.needsSteps && !c.codes.length), label + ': fixture covers codes and steps');
+          assert(m.cards.some(c => c.codes.length > 1) && m.cards.some(c => c.steps.length && !c.codes.length) &&
+                 m.cards.some(c => c.steps.some(step => step.startsWith('Price is per unit'))) &&
+                 m.cards.some(c => c.ends), label + ': fixture covers codes, steps, per unit, expiry');
+          if (url === '/') assert(m.cards.some(c => c.steps.length > 3), label + ': fixture covers long required steps');
           for (const c of m.cards) {
             const at = `${label}: card ${c.i}`;
             assert(!c.headline, at + ' shows no headline');
@@ -157,7 +167,9 @@ const median = values => values.slice().sort((a, b) => a - b)[Math.floor(values.
             assert.equal(c.codeLine, c.codes.length ? `Enter Code: ${c.codes.join(', ')} at checkout` : null, at + ': the code line');
             assert(c.codeOnce, at + ': each code once');
             if (url === '/' && c.codes.length) assert.equal(c.codeButtons, c.codes.length, at + ': codes copy on tap');
-            if (c.needsSteps) assert(c.howLine !== null && c.howLine <= 2.05, at + ': steps visible, two lines at most');
+            if (c.steps.length) assert(c.howLine !== null && c.howClipped === false && c.steps.every(step => c.howText.includes(step)),
+              at + ': every step shown in full: ' + JSON.stringify([c.steps, c.howText]));
+            if (c.ends) assert(c.endsShown, at + ': "ends ' + c.ends + '" chip in the chip row');
             assert(!c.dealSteps, at + ': the steps line replaces the "How to get this price" link');
             assert(c.buyHeight < 34, `${at}: smaller Get deal (${c.buyHeight}px)`);
             if (width < 900) {
@@ -177,6 +189,7 @@ const median = values => values.slice().sort((a, b) => a - b)[Math.floor(values.
         report.short_cards[label] = {cards: s.cards.length, headlines: {off: o.cards.filter(c => c.headline).length, on: 0},
           maxTitleLines: {off: Math.max(...o.cards.map(c => c.titleLines)), on: Math.max(...s.cards.map(c => c.titleLines))},
           codeLines: s.cards.filter(c => c.codeLine).length, stepLines: s.cards.filter(c => c.howLine !== null).length,
+          endsChips: s.cards.filter(c => c.ends).length,
           getDeal: {off: median(o.cards.map(c => c.buyHeight)), on: median(s.cards.map(c => c.buyHeight)),
             ...(width < 900 ? {tapOn: Math.min(...s.cards.filter(c => c.buyTap !== null).map(c => c.buyTap)),
               tapWithoutCardClick: Math.min(...seen.ownTap)} : {})}};

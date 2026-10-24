@@ -13,12 +13,16 @@ event hubs, the related deals on deal pages):
   page keep it). Not drawn rather than hidden: the home page's HTML budget pays for the rest;
 - the title takes two lines at most (the home page already clamped it; on phones the link
   is clamped, so its 44px tap target, which belongs to the heading, is not clipped);
-- a step deal's steps in one visible line, two lines at most ("Clip the 20% coupon ->
-  Subscribe & Save"; the deal page has the full terms), phones included: the "How to get
-  this price" link of phone_first_screen no longer stands in for them;
+- the card's steps and notes in one visible line, never clipped ("Clip the 20% coupon ->
+  Subscribe & Save", "Price is per unit; ... -> Quantity: each, buy 6", "Price varies by
+  option; ..."), whether or not the deal needs steps, phones included: the "How to get this
+  price" link of phone_first_screen no longer stands in for them;
 - every deal with a code: "Enter Code: SAVE20 at checkout" (several: "A, B"), a copy-on-tap
-  button on the home page as before. A code shows once per card: a step that only enters
-  it goes, a code inside another step reads "the code", the How box no longer repeats it;
+  button on the home page as before. Where a step names a code with a code word ("use code
+  SAVE20"), it reads "the code"; a step that only enters it goes; nothing inside other words
+  or numbers changes ("Spend $100", "the APP"), so a code can show twice rather than garbled.
+  The How box no longer repeats the codes;
+- a stated expiry (the headline's "Expires Oct 25.") as an "ends Oct 25" chip;
 - the How box keeps only its disclosures, as on the home page (rebate later, price varies,
   shipping not included); on hub pages it was a closed box whose summary repeated the
   requirements ("Coupon required", "Promo code required") and hid the steps and codes.
@@ -32,6 +36,7 @@ CSS budget had no room: with phone_first_screen off too, the home page leaves ou
 ticker's styles (phone_first_screen.drop_ticker_rules). Off or missing changes no byte.
 """
 import hashlib
+import json
 import re
 from html import escape
 from pathlib import Path
@@ -39,13 +44,17 @@ from pathlib import Path
 from . import hide_timer_ticker, phone_first_screen
 from .template_slots import replace_slot
 
-# In a step, a code (marked \x01) and its "promo code" words read "the code"; a step that then only
-# enters it goes (link_facts._simple_code_deal's wording).
-MASK = r'''(?:the\s+)?(?:(?:promo|coupon|discount)\s+)?(?:code\s*:?\s*)?["']?\x01["']?'''
-CODE_STEP = r'(?:(?:use|enter|apply)\s+)?the code(?:\s+at\s+checkout)?[.!]?'
+# A code is touched only where a code word names it ("code SAVE20", "promo code: SAVE20", "the coupon
+# SAVE20"), as a whole token: that reference reads "the code", unless another code follows ("code A, B"
+# stays as written). A step that is only such a reference ("Enter code SAVE20 at checkout") goes. Never
+# inside other words or numbers ("Spend $100", "the APP"). {0}: the card's codes, longest first.
+KEY = r'''\b(?:the[ \t]+)?(?:(?:promo|coupon|discount)(?:[ \t]+code)?|code)[ \t]*:?[ \t]*["']?'''
+MASK = KEY + r'''(?:{0})["']?(?![\w-])(?![ \t]*(?:,|&|\+|and\b|or\b)[ \t]*["']?(?:{0}))'''
+DROP = r'''^[ \t]*(?:(?:use|enter|apply)[ \t]+)?''' + KEY + r'''(?:{0})["']?(?:[ \t]+at[ \t]+checkout)?[ \t]*[.!]?[ \t]*$'''
+# The headline's last sentence when the deal states an expiry (site._headline): "... Expires Oct 25."
+ENDS = r'(?:^| )Expires ([A-Z][a-z]{2} \d{2})\.$'
 ANCHOR = '.title a{color:inherit}'  # once in index.html and in hub.html
-CSS = ('.card .how-line{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;'
-       'font-size:12.5px;line-height:1.4}.code-line{font-size:12.5px;font-weight:600}'
+CSS = ('.card .how-line{font-size:12.5px;line-height:1.4}.code-line{font-size:12.5px;font-weight:600}'
        '.card .actions>.getdeal{padding:6px 12px;border-radius:8px;min-height:0}.card .deal-steps{display:none}'
        # Its 44px tap target grows upward over the chips: the card's own edge (overflow:hidden) is 5px below.
        '@media(max-width:640px){.card .actions>.getdeal::after{content:"";position:absolute;left:0;right:0;'
@@ -53,30 +62,40 @@ CSS = ('.card .how-line{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-ori
 HUB_CSS = CSS + '.card .title,.card .title a{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}'
 
 # index.html cardHtml, the drawn twin of lines_html and how_html below.
-LINES = '''    var codeList = (d.codes || []).map(String).filter(Boolean);
-    var lineSteps = (d.how || []).map(function (s) {
-      s = String(s);
-      codeList.forEach(function (c) { s = s.split(c).join("\\x01"); });
-      return s.replace(/''' + MASK + '''/gi, "the code");
-    }).filter(function (s) { return !/^''' + CODE_STEP + '''$/i.test(s.trim()); });
-    var lines = dead ? "" : (lineSteps.length && (d.needs_steps || (d.checkout || {}).card)
-      ? '<div class="how-line">' + lineSteps.map(esc).join(" &rarr; ") + "</div>" : "") +
-      (codeList.length ? '<div class="code-line">Enter Code: ' + codeList.map(function (c) {
+LINES = (r'''    var codeList = (d.codes || []).map(String).filter(Boolean), lineSteps = (d.how || []).map(String);
+    if (codeList.length) {
+      var codeAlt = codeList.slice().sort(function (a, b) { return b.length - a.length; }).map(function (c) {
+        return c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      }).join("|");
+      var codeDrop = new RegExp(''' + json.dumps(DROP) + r'''.split("{0}").join(codeAlt), "i");
+      var codeMask = new RegExp(''' + json.dumps(MASK) + r'''.split("{0}").join(codeAlt), "gi");
+      lineSteps = lineSteps.filter(function (s) { return !codeDrop.test(s); }).map(function (s) {
+        return s.replace(codeMask, "the code");
+      });
+    }
+    var lines = dead ? "" : (lineSteps.length ? '<div class="how-line">' + lineSteps.map(esc).join(" &rarr; ") + "</div>" : "") +
+'''
+         '''      (codeList.length ? '<div class="code-line">Enter Code: ' + codeList.map(function (c) {
         return '<button type="button" class="code" data-code="' + esc(c) + '" aria-label="Copy code ' + esc(c) + '">' +
           esc(c) + "</button>";
       }).join(", ") + " at checkout</div>" : "");
-'''
+''')
 HOW = '''      how = '<div class="how" data-requirements><b>How to get this price:</b> ' +
         (extra ? esc(extra) + (steps || codes ? "<br>" : "") : "") +
         (steps || (codes || extra ? "" : "the steps are in the deal post")) +
         (codes ? (steps ? "<br>" : "") + "Code " + codes : "") + "</div>"'''
 SHORT_HOW = ('''      how = (extra || !lines ? '<div class="how" data-requirements><b>How to get this price:</b> ' +'''
              '''\n        (extra ? esc(extra) : "the steps are in the deal post") + "</div>" : "")''')
+# The script card's expiry chip, after "select sizes", where card_html draws it.
+COUNTDOWN = '    var countdown = d.spotlight && spotlightTime(d.spotlight.ends_at, Date.now());\n'
+ENDS_JS = ('    var ends = !dead && !d.spotlight && /' + ENDS + '/.exec(d.headline || "");\n'
+           '    if (ends) metarow += \'<span class="chip">ends \' + ends[1] + "</span>";\n')
 SLOTS = (
     ('      (d.headline ? \'<div class="headline">\' + esc(d.headline) + "</div>" : "") +\n', ''),
     ('    var how = "";\n', LINES + '    var how = "";\n'),
     (HOW, SHORT_HOW),
     ('      how +\n      \'<div class="metarow">\'', '      lines + how +\n      \'<div class="metarow">\''),
+    (COUNTDOWN, ENDS_JS + COUNTDOWN),
 )
 
 
@@ -85,17 +104,21 @@ def enabled(cfg):
 
 
 def steps(d):
-    """The card's steps without its codes: the code line says them."""
-    out = []
-    for step in d.get('how') or []:
-        s = str(step)
-        for code in map(str, d.get('codes') or []):
-            if code:
-                s = s.replace(code, '\x01')
-        s = re.sub(MASK, 'the code', s, flags=re.I)
-        if not re.fullmatch(CODE_STEP, s.strip(), re.I):
-            out.append(s)
-    return out
+    """Every step and note of the card (per unit, price varies, quantity...); where a code word names
+    one of its codes, the code line says it (MASK and DROP above)."""
+    shown = [str(step) for step in d.get('how') or []]
+    codes = [str(c) for c in d.get('codes') or [] if str(c)]
+    if not codes:
+        return shown
+    alt = '|'.join(re.escape(c) for c in sorted(codes, key=len, reverse=True))
+    drop, mask = (re.compile(pattern.replace('{0}', alt), re.I | re.A) for pattern in (DROP, MASK))
+    return [mask.sub('the code', s) for s in shown if not drop.fullmatch(s)]
+
+
+def ends_html(d):
+    """The headline's expiry as a chip ("ends Oct 25"): the headline is not on the card."""
+    m = re.search(ENDS, str(d.get('headline') or ''), re.A)
+    return f'<span class="chip">ends {m[1]}</span>' if m and d.get('status') != 'dead' and not d.get('spotlight') else ''
 
 
 def lines_html(d, buttons):
@@ -104,8 +127,7 @@ def lines_html(d, buttons):
         return ''
     e = lambda v: escape(str(v))
     shown = steps(d)
-    html = ('<div class="how-line">' + ' &rarr; '.join(map(e, shown)) + '</div>'
-            if shown and (d.get('needs_steps') or (d.get('checkout') or {}).get('card')) else '')
+    html = '<div class="how-line">' + ' &rarr; '.join(map(e, shown)) + '</div>' if shown else ''
     codes = [f'<button type="button" class="code" data-code="{e(c)}" aria-label="Copy code {e(c)}">{e(c)}</button>'
              if buttons else f'<code class="code">{e(c)}</code>' for c in map(str, d.get('codes') or []) if c]
     return html + ('<div class="code-line">Enter Code: ' + ', '.join(codes) + ' at checkout</div>' if codes else '')

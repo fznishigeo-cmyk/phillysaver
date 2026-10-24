@@ -4,6 +4,7 @@ import json
 import re
 import shutil
 import subprocess
+from html import escape
 from pathlib import Path
 from unittest.mock import patch
 
@@ -24,11 +25,14 @@ SWITCHES = ("short_cards", "best_today_phone_cards")
 LONG = (", 6 Piece Cooking Utensils With Wood Handle, Heat Resistant Kitchen Tool Set With Spatula, "
         "Spoon, Ladle, Skimmer, Slotted Spoon, Pasta Server")
 CARD = '<article class="card'
+REVIEW_LONG = ["Clip the 20% coupon on the product page, below the price (it can take a moment to show up)",
+               "Add two of them to the cart before you check out", "Choose Subscribe & Save for the lowest price"]
 
 
 def offers(rows):
     """The phone-budget offers (every fourth coded); every fifth named like a long store title, every
-    third from one source, a clip-coupon deal, a two-code deal and a rebate in every 15."""
+    third from one source; in every 15 a clip-coupon deal, a two-code deal, a rebate, a per-unit
+    price, a price range, long required steps and a stated expiry."""
     out = fixture_offers()[:rows]
     for i, row in enumerate(out):
         if i % 5 == 1:
@@ -42,6 +46,14 @@ def offers(rows):
                                                                 "Enter code SAVE5 at checkout"])
         if i % 15 == 13:
             row.update(rebates=["$10 mail-in rebate"], flags=["rebate_dependent"])
+        if i % 15 == 5:
+            row.update(flags=["per_unit"], quantity_or_unit="each, buy 6")
+        if i % 15 == 10:
+            row.update(flags=["range"])
+        if i % 15 == 11:
+            row.update(stack_steps=REVIEW_LONG, conditions=["subscribe_save"])
+        if i % 15 == 6:
+            row.update(expires_at="2026-10-25T23:00:00+00:00")
     return out
 
 
@@ -191,6 +203,63 @@ def test_static_lines_match_the_script(tmp_path, tidy):
             in cases[1]["lines"])
     assert "Clip the coupon and use the code" in cases[1]["lines"] and "Apply" not in cases[1]["lines"]
     assert "the steps are in the deal post" in cases[6]["how"] and "Rebate after purchase" in cases[4]["how"]
+    path = tmp_path / "parity.json"
+    path.write_text(json.dumps(cases))
+    result = run_node("drop_card_parity.cjs", out / "index.html", out / "deals.json", path)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+# Codex review of bd8583e: a code masked inside other words and numbers, per-unit / range /
+# quantity notes lost, required steps clipped, the expiry date lost with the headline.
+REVIEW = {  # row overrides -> the card's steps line, as both renderers draw it ("" = none)
+    "unit": (dict(store="Walmart", codes=[], flags=["per_unit"], quantity_or_unit="each, buy 6", conditions=["new"]),
+             "Price is per unit; the checkout total depends on quantity. &rarr; Quantity: each, buy 6"),
+    "range": (dict(store="Target", codes=[], flags=["range"], conditions=["new"]),
+              "Price varies by option; the displayed price is the verified upper bound."),
+    "ten": (dict(codes=["10"], stack_steps=["Spend $100 and use code 10"]), "Spend $100 and use the code"),
+    "app": (dict(codes=["APP"], stack_steps=["Buy through the APP only", "Enter code APP at checkout"]),
+            "Buy through the APP only"),
+    "overlap": (dict(codes=["SAVE", "SAVE10"], stack_steps=["Use code SAVE10 on the first one and code SAVE on the second"]),
+                "Use the code on the first one and the code on the second"),
+    "list": (dict(codes=["A1", "B2"], stack_steps=["Use code A1, B2 together"]), "Use code A1, B2 together"),
+    "long": (dict(codes=[], stack_steps=REVIEW_LONG, conditions=["subscribe_save"]),
+             " &rarr; ".join(escape(step) for step in REVIEW_LONG + ["Choose Subscribe & Save"])),  # nothing clipped
+    "ends": (dict(codes=[], expires_at="2026-10-25T23:00:00+00:00"), ""),
+}
+
+
+def test_review_fixes_static_and_script(tmp_path):
+    from tests.test_publish_site import make_deal
+    from tests.test_support import NOW as TEST_NOW, render
+    cfg = load_config()
+    cfg.tracking, cfg.hide_deal_site_links, cfg.non_amazon_freshness_enabled = {}, False, False
+    deals = [make_deal(**{"dedupe_key": f"review-{key}", "item": f"Product {key} kitchen set", "category": "kitchen",
+                          "image_url": "https://images.example.invalid/card.png",
+                          "first_seen_at": TEST_NOW.isoformat(), **row}) for key, (row, _) in REVIEW.items()]
+    out, doc, *_ = render(tmp_path, cfg, deals)
+    rows = {d["item"].split()[1]: d for d in doc["deals"]}
+    best = (out / "best-deals-today/index.html").read_text()
+    assert set(rows) == set(REVIEW)
+    assert rows["unit"]["needs_steps"] is False and rows["unit"]["checkout"]["card"] == ""
+    assert rows["ends"]["headline"].endswith(" Expires Oct 25.")
+    cases = []
+    for key, (_, line) in REVIEW.items():
+        d = rows[key]
+        hub = re.search(r'<article class="card[^"]*">(?:(?!</article>).)*Product ' + key + r' kitchen set.*?</article>',
+                        best, re.S)[0]
+        home = seo.card_html(d, {d["key"][:8]: d["deal_path"]}, TEST_NOW, fresh_config=cfg, client_how=True, short=True)
+        for card in (hub, home):
+            steps = re.search(r'<div class="how-line">(.*?)</div>', card, re.S)
+            assert (steps[1] if steps else "") == line, (key, card)
+            # A step that only enters the code goes; the code line names every code.
+            assert ('class="code-line">Enter Code: ' in card) is bool(d["codes"]), key
+            assert ("<span class=\"chip\">ends Oct 25</span>" in card) is (key == "ends"), key
+            assert "<div class=\"headline\">" not in card
+        part = lambda pattern: (re.search(pattern, home, re.S) or [""])[0]
+        cases.append(dict(row=d, lines=part(r'<div class="how-line">.*?</div>') + part(r'<div class="code-line">.*?</div>'),
+                          ends=part(r'<span class="chip">ends [^<]*</span>')))
+    # Required steps are never clipped: the steps line has no line clamp.
+    assert "line-clamp" not in re.search(r"\.card \.how-line\{[^}]*\}", short.CSS)[0]
     path = tmp_path / "parity.json"
     path.write_text(json.dumps(cases))
     result = run_node("drop_card_parity.cjs", out / "index.html", out / "deals.json", path)
