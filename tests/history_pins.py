@@ -862,12 +862,25 @@ def _pre_feel_good(front_page):
 
 def pre_feel_good(cfg):
     """Before the 2026-10-23 feel-good lean; never re-pin recorded bytes."""
+    pre_best_today_mix(cfg)
     _pre_feel_good(cfg.front_page)
     return cfg
 
 
 def pre_feel_good_raw(config):
+    pre_best_today_mix_raw(config)
     _pre_feel_good(config.get("publish", {}).get("front_page"))
+    return config
+
+
+def pre_best_today_mix(cfg):
+    """Before Best deals today had its own mix (operator 2026-10-24)."""
+    cfg.front_page.pop("best_today_mix", None)
+    return cfg
+
+
+def pre_best_today_mix_raw(config):
+    config.get("publish", {}).get("front_page", {}).pop("best_today_mix", None)
     return config
 
 

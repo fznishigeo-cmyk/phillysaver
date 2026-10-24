@@ -1409,6 +1409,10 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         from .front_mix import validate as validate_mix
         validate_mix(cfg.front_page["mix"],
                      ((cfg.front_page.get("appeal") or {}).get("want") or {}).get("groups", {}))
+    if "best_today_mix" in cfg.front_page:
+        from .best_today_mix import validate as validate_best_mix
+        validate_best_mix(cfg.front_page["best_today_mix"],
+                          ((cfg.front_page.get("appeal") or {}).get("want") or {}).get("groups", {}))
     cfg.pinterest = g("social", "pinterest", default={}) or {}
     cfg.meta = g("social", "meta", default={}) or {}
     cfg.social_profiles = social_profiles(g("social", "profiles", default={}) or {})

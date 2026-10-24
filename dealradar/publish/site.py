@@ -14,7 +14,7 @@ import re
 import shutil
 import time
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from html import escape
 from pathlib import Path
@@ -983,7 +983,10 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     original_picks = top_picks(pick_candidates, drop_fresh.pick_options(cfg), now,
                                summary=checkout_summary, cfg=cfg, boosted=boosted)
     original_picks = drop_rotation.prepare_picks(original_picks, cfg, boosted)
-    best_extra = front_mix.extras(pick_candidates, {d["dedupe_key"] for d in original_picks}, cfg, now)
+    from ..best_today_mix import front_page as best_front_page
+    best_fp = best_front_page(cfg.front_page, now)
+    best_cfg = replace(cfg, front_page=best_fp) if best_fp is not cfg.front_page else cfg
+    best_extra = front_mix.extras(pick_candidates, {d["dedupe_key"] for d in original_picks}, best_cfg, now)
     picked = [public_candidates[d["dedupe_key"]] for d in original_picks]
     for n, d in enumerate(picked, 1):
         d["pick"] = n
@@ -1299,7 +1302,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         **({"saved_deals_limit": saved_limit} if saved_deals else {}),
         # Ranking boosts are applied in Python; omit their knobs so disabling restores
         # the previous payload bytes as well as the previous scores/order.
-        "front_page": {k: v for k, v in cfg.front_page.items() if k not in {"appeal", "popular_affordable", "everyday_price", "demote_words", "mix"}
+        "front_page": {k: v for k, v in cfg.front_page.items() if k not in {"appeal", "popular_affordable", "everyday_price", "demote_words", "mix", "best_today_mix"}
                        and (k != "fresh_page_size" or drop_fresh.enabled(cfg))
                        and (k != "used_tab_only" or v)
                        and (k != "checkout_price_deals" or checkout_prices.enabled(cfg))},

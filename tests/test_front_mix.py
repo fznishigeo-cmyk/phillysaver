@@ -282,6 +282,7 @@ def test_extras_use_the_top_pick_checks():
 
 
 def test_published_labels_rules_and_best_deals_today(tmp_path):
+    from tests.history_pins import pre_best_today_mix
     from tests.test_publish_site import make_deal
     titles = [("Women's Lace Bralette", "fashion"), ("Matte Lipstick Set", "beauty"),
               ("Toilet Paper 24 Rolls", "home"), ("Air Fryer 6 Quart", "kitchen"),
@@ -292,7 +293,7 @@ def test_published_labels_rules_and_best_deals_today(tmp_path):
                        price_published_at=NOW.isoformat(), price_rechecked_at=NOW.isoformat(),
                        critic={"plausible": True, "confidence": .9, "reason": "Backed basis"})
              for i, (title, category) in enumerate(titles)]
-    cfg = load_config()
+    cfg = pre_best_today_mix(load_config())
     cfg.hide_deal_site_links = False
     out, doc, *_ = render(tmp_path, cfg, deals)
     labels = {d["item"]: d.get("mx") for d in doc["deals"]}

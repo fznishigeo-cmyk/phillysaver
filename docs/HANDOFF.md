@@ -244,6 +244,26 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Best deals today category mix (Nishi 2026-10-24; uncommitted):**
+  `publish.front_page.best_today_mix` ships ON for `/best-deals-today/` only:
+  sexy 3, wow 2, seasonal 4, pets 3, kids 1, health 3, essentials 5, beauty 5,
+  home/kitchen 4, rest 0. Named title words precede categories; adult exclusions
+  still win. Seasonal words combine every active appeal window on the build's
+  New York date with configured fallback words. Eligible named supply fills
+  shortages before rest; picks precede score-ranked extras within each bucket.
+  The adapter reuses `front_mix.validate`, `bucket` and `schedule`, leaving that
+  source unchanged because its bytes feed the homepage's version stamp. The
+  homepage mix/labels stay unchanged; OFF/absent use the original selection.
+  Historical config pins remove the new knob. The 58 focused checks pass;
+  OFF matches all 172 original-checkout publication files byte-for-byte,
+  including version stamps; ON changes only the best-today page. Requested
+  related run: 4,861 passed, 23 skipped; all 14 initial failures resolved:
+  the copied deploy fixture now includes the adapter, and the Stripe workflow
+  fixture uses offline urllib responses instead of forbidden sandbox sockets
+  (both affected files: 83 passed). Two existing 50ms timing checks pass alone
+  (2 passed). Additional matching JS test wrappers: 194 passed, 21 skipped;
+  search-results Node test: 1 passed. Full-suite verification remains with the
+  operator's agent. No network, commit or push.
 - **Hourly Keepa overflow (dad61e5, 2026-10-23; ships with relR):**
   Hourly #352 admitted only 10 Buy Box candidates despite a 350-token surplus:
   ordinary cadence excluded other top deals before the surplus queue. New
