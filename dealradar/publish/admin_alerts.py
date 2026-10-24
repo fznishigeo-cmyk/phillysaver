@@ -78,7 +78,13 @@ def check_and_alert(db, cfg, now: datetime, *, items_fetched: int,
         for w in warnings:
             logger.warning("admin alert (no credentials, log only): %s", w)
     else:
-        status = send_admin_text(text, http_client=http_client)
+        try:
+            status = send_admin_text(text, http_client=http_client)
+        except httpx.HTTPError as exc:
+            # A timeout may still have delivered it: keep the claim (never resent)
+            # and let the run go on to its deploy (fast #885 died here, 2026-10-24).
+            logger.error("admin alert send failed (%s)", type(exc).__name__)
+            return warnings
         if status != 200:
             if 400 <= status < 500:
                 for channel, delivery_token in deliveries:

@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from dealradar.config import AppConfig
@@ -184,6 +185,24 @@ def test_uncertain_post_is_not_automatically_retried(db, cfg, monkeypatch):
     check_and_alert(db, cfg, NOW, items_fetched=10, http_client=ok)
     assert len(ok.posts) == 0
     assert db.outgoing_for("admin")[0]["status"] == "pending"
+
+
+def test_send_timeout_never_stops_the_run(db, cfg, monkeypatch):
+    set_admin_creds(monkeypatch)
+    seed_hourly_runs(db, NOW, items=100)
+
+    class TimingOut(FakeHttpClient):
+        def post(self, url, json=None, **kwargs):
+            self.posts.append((url, json))
+            raise httpx.ReadTimeout("The read operation timed out")
+
+    slow = TimingOut()
+    warnings = check_and_alert(db, cfg, NOW, items_fetched=10, http_client=slow)
+    assert warnings == ["low volume: 10 vs 7-day avg 100.0"]
+    assert len(slow.posts) == 1 and not admin_sent(db)
+    ok = FakeHttpClient(status_code=200)  # it may have arrived: never resent
+    check_and_alert(db, cfg, NOW, items_fetched=10, http_client=ok)
+    assert ok.posts == [] and db.outgoing_for("admin")[0]["status"] == "pending"
 
 
 def test_unknown_sender_digest_once_a_day_despite_health_or_count_changes(db, cfg, monkeypatch, caplog):
