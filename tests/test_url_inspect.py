@@ -1,6 +1,6 @@
 """Search Console URL Inspection: request shape, parsing and the home-page flag (offline)."""
 from dealradar.growth import google
-from dealradar.growth.inspect import lines
+from dealradar.growth.inspect import KEY_PAGES, lines
 from tests.test_workflows import WORKFLOWS, load_workflow, single_job
 
 
@@ -52,7 +52,14 @@ def test_workflow_is_read_only_and_daily():
     doc = load_workflow(WORKFLOWS / "seo-inspect.yml")
     assert doc["permissions"] == {"contents": "read"}
     job = single_job(doc)
-    assert job["timeout-minutes"] == 5
+    assert job["timeout-minutes"] == 8
     run = next(s for s in job["steps"] if s.get("name") == "Inspect key pages in Google's index")
     assert run["env"] == {"GOOGLE_SA_JSON": "${{ secrets.GOOGLE_SA_JSON }}"}
     assert "python -m dealradar.growth.inspect" in run["run"]
+
+
+def test_tool_pages_are_inspected():
+    # Nishi requested indexing for these (2026-10-19 and 2026-10-22).
+    for path in ("/amazon-deal-checker/", "/amazon-discount-finder/", "/deal-spotter/",
+                 "/fakespot-alternative/", "/review-checker/", "/reviewmeta-alternative/"):
+        assert path in KEY_PAGES

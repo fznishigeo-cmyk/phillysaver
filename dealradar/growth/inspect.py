@@ -16,7 +16,10 @@ import httpx
 from ..config import load_config
 from . import google
 
-KEY_PAGES = ("/", "/about", "/how-it-works", "/best-deals-today/", "/join")
+KEY_PAGES = ("/", "/about", "/how-it-works", "/best-deals-today/", "/join",
+             # Tool pages Nishi asked Google to index (2026-10-19 and 2026-10-22).
+             "/amazon-deal-checker/", "/amazon-discount-finder/", "/deal-spotter/",
+             "/fakespot-alternative/", "/review-checker/", "/reviewmeta-alternative/")
 
 
 def lines(results: list[dict], home: str) -> list[str]:
@@ -48,7 +51,8 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 results.append(google.inspect_url(client, token, cfg.growth_search_console_site, url))
             except httpx.HTTPError as exc:
-                print(f"{url} | error {type(exc).__name__}")
+                status = getattr(getattr(exc, "response", None), "status_code", "")
+                print(f"{url} | error {type(exc).__name__} {status}".rstrip())
     for line in lines(results, base + "/"):
         print(line)
     return 0
