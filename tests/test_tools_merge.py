@@ -144,9 +144,11 @@ def test_spotter_report_rows_single_verdict_and_tagged_deals(tmp_path, monkeypat
     sidebar = re.search(r'<aside class="report-sidebar".*?</aside>', report, re.S)[0]
     links = re.findall(r'<a href="([^"]+)" target="_blank" rel="sponsored nofollow noopener">Get deal', sidebar)
     assert len(links) == 5 and all(re.fullmatch(r"https://www\.amazon\.com/dp/B0MERGE\d{3}\?tag=example-20", u) for u in links)
-    strip = re.search(r'<div class="recommends".*?</div></div>', html, re.S)[0]
-    assert strip.count("TODAY’S DEAL") == 3 and strip.index("wowpriced recommends")
-    assert html.index('class="recommends"') > html.index('<dialog id="analyze-modal"')
+    # No "wowpriced recommends" strip in the analyzer box (hide_spotter_recommends, operator 2026-10-24;
+    # the strip with the switch off: tests/test_spotter_recommends.py).
+    modal = re.search(r'<dialog id="analyze-modal".*?</dialog>', html, re.S)[0]
+    assert 'class="recommends"' not in html and "TODAY’S DEAL" not in html
+    assert '</p><div class="modal-bottom">' in modal and 'id="modal-deals"' in modal
     script = (out / "deal-spotter.js").read_text()
     for needle in ("mergeReport(item, grade);", "#analyze-modal a[href]", "function namePanelRated(",
                    "function namePanel(panel, raw)", "else mergeQuery(params, submit);", "new URL(location.pathname, location.origin)"):

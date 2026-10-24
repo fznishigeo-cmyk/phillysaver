@@ -18,6 +18,7 @@ cfg = load_config()
 cfg.keepa_click_price_rule = cfg.keepa_buybox_rule = "off"
 assert cfg.tools_merge is True and cfg.soft_buttons is True
 assert cfg.review_checker_word_links is True and cfg.deal_spotter_word_links is True
+assert cfg.hide_spotter_recommends is True and cfg.plural_highly_rated is True and cfg.equal_word_buttons is True
 with patch.object(site, "util_now", lambda: NOW): render(Path(sys.argv[1]), cfg, rows())
 `;
 const NOW = new Date('2026-10-12T00:10:00Z'), ASIN = 'B0MERGE001';
@@ -163,17 +164,18 @@ async function contrastAudit(page, scope) {
         await page.clock.runFor(3000);
         assert.deepEqual(calls, [], 'typed words must not call /api/search, even later');
 
-        // A link: the blue analyzer with today's deals, then the report.
+        // A link: the blue analyzer, then the report. No "wowpriced recommends" strip in it
+        // (hide_spotter_recommends, operator 2026-10-24): progress, steps and "See today's deals" stay.
         await page.locator('#q').fill(ASIN);
         await Promise.all([page.waitForResponse(r => r.url().includes('/api/search')), page.locator('.hero-box button').click()]);
         await page.clock.runFor(3000);
         assert(await page.locator('#analyze-modal').isVisible());
         assert.equal(await page.locator('#modal-status').textContent(), 'Analyzing the price, please wait..');
-        assert.equal(await page.locator('.rec-card').count(), 3);
-        assert.match(await page.locator('.recommends').innerText(), /wowpriced recommends/);
+        assert.equal(await page.locator('#analyze-modal :is(.recommends, .rec-card)').count(), 0);
+        assert(Number(await page.locator('#analyze-modal [role="progressbar"]').getAttribute('aria-valuenow')) > 0);
+        assert((await page.locator('#modal-step').textContent()).trim());
+        assert(await page.locator('#modal-deals').isVisible()); assert.equal(await page.locator('#modal-deals').getAttribute('href'), '/');
         await shot('loading');
-        await page.locator('.rec-card a').first().click();
-        assert.deepEqual(await tracked(), [['deal_click', {store:'Amazon'}]]);
         await page.clock.runFor(7200);
         assert(await page.locator('#analyze-modal').isHidden());
         assert.equal(await page.locator('#grade-letter').textContent(), 'B');
@@ -251,7 +253,8 @@ async function contrastAudit(page, scope) {
         state.priceCheck = true;
 
         // The words box's two links per tool (word_links, operator 2026-10-23 A51/A52): same texts,
-        // order and new tab; Best Sellers / Featured with the deal filter; no $50 cap (p_36).
+        // order and new tab; Best Sellers / Featured with the deal filter; no $50 cap (p_36). The yellow one
+        // names the plural (plural_highly_rated), its link the typed words; both as wide (equal_word_buttons).
         for (const [slug, blue, yellow] of [
           ['review-checker', 'rh=p_n_deal_type%3A210906366011', 'rh=p_n_deal_type%3A23566065011&s=exact-aware-popularity-rank'],
           ['deal-spotter', 'rh=p_n_deal_type%3A23566064011', 'rh=p_n_deal_type%3A210906366011&s=exact-aware-popularity-rank']]) {
@@ -260,7 +263,9 @@ async function contrastAudit(page, scope) {
           assert.deepEqual(await page.locator('#name-results .words-buttons a').evaluateAll(links => links.map(a =>
             [a.className, a.innerText.trim(), a.getAttribute('href'), a.target, a.rel])), [
             ['words-discounts', 'See vacuum discounts on Amazon →', `https://www.amazon.com/s?k=vacuum&${blue}&tag=wowpriced-20`, '_blank', 'sponsored noopener'],
-            ['name-button', 'See highly rated vacuum on Amazon →', `https://www.amazon.com/s?k=vacuum&${yellow}&tag=wowpriced-20`, '_blank', 'sponsored noopener']], slug);
+            ['name-button', 'See highly rated vacuums on Amazon →', `https://www.amazon.com/s?k=vacuum&${yellow}&tag=wowpriced-20`, '_blank', 'sponsored noopener']], slug);
+          const widths = await page.locator('#name-results .words-buttons a').evaluateAll(links => links.map(a => a.getBoundingClientRect().width));
+          assert(Math.abs(widths[0] - widths[1]) <= 1, slug + ' widths ' + widths);
           assert.equal(calls.length, 0); await noScroll();
         }
 
