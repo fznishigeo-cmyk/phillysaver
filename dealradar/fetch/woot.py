@@ -38,7 +38,7 @@ from ..db import DB
 from ..http_client import api_fetcher
 from ..errors import AdapterNotConfigured, DeadlineExceeded
 from ..models import RawPost, SourceConfig
-from ..verify import (CONFIRM_GONE_H, _price_hidden_by_promo,
+from ..verify import (CONFIRM_GONE_H, _price_hidden_by_promo, is_used_deal,
                       live_price_reading, woot_offer_url)
 from .base import SourceAdapter
 
@@ -95,6 +95,21 @@ USED_MARKER = ("Counted as used/refurbished: Woot does not list it as "
 def _is_used(condition: str) -> bool:
     c = condition.strip()
     return not c or bool(_USED_RE.search(c)) or not _NEW_RE.match(c)
+
+
+def _condition_mismatch(deal: dict, item: dict) -> bool:
+    """Compare explicit Woot facts only; legacy and blank labels are unknown."""
+    stored = str(deal.get("woot_condition") or "").strip()
+    reading = str(item.get("Condition") or "").strip()
+    if not stored or not reading:
+        return False
+    if deal.get("conditions") == [] and not _is_used(stored):
+        used = False
+    elif is_used_deal(deal) and _is_used(stored):
+        used = True
+    else:
+        return False  # no consistent, explicit provenance for this stored class
+    return reading.casefold() == "new" if used else _is_used(reading)
 
 
 def _num(v: Any) -> float | None:
@@ -250,18 +265,36 @@ def _recheck_offers(db: DB, items: list, now: datetime, *,
     source = source or SourceConfig(name="woot", method="api", url=FEED_URL, adapter="woot")
     stats = dict(confirmed=0, repriced=0, range_skipped=0, above_range=0)
     offers: dict[str, list[dict]] = {}
+    offers_by_id: dict[str, list[dict]] = {}
     for item in items:
         if isinstance(item, dict):
             key = woot_offer_url({"canonical_url": item.get("Url")})
             if key:
                 offers.setdefault(key, []).append(item)
+            uid = str(item.get("OfferId") or item.get("Id") or "")
+            if cfg.woot_condition_lock and uid:
+                offers_by_id.setdefault(uid, []).append(item)
     for deal in db.all_deals(status="alive"):
         matches = offers.get(woot_offer_url(deal), [])
         if len(matches) != 1:
-            continue
+            # An exact API ID can still prove expiry after its URL changes;
+            # this fallback never broadens matching for price readings.
+            matches = offers_by_id.get(str(deal.get("woot_offer_id") or ""), [])
+            if len(matches) != 1 or not _condition_mismatch(deal, matches[0]):
+                continue
+            ends = util.parse_iso(str(matches[0].get("EndDate") or ""))
+            if ends is None or ends > now:
+                continue
         item = matches[0]
         payload = dict(deal)
         ends = util.parse_iso(str(item.get("EndDate") or ""))
+        if cfg.woot_condition_lock and _condition_mismatch(deal, item):
+            # A changed condition cannot confirm any price or availability.
+            # Its EndDate still ends this exact API offer when its ID agrees.
+            uid = str(item.get("OfferId") or item.get("Id") or "")
+            if not (ends is not None and ends <= now and uid
+                    and uid == str(deal.get("woot_offer_id") or "")):
+                continue
         if ends is not None and ends <= now:
             accuracy.record(db, cfg, deal["dedupe_key"], now, source="woot", unavailable=True)
             payload.update(death="api_ended", died_at=util.iso(now), gone_suspect_at="")
@@ -415,6 +448,12 @@ class WootAdapter(SourceAdapter):
 
         if db is not None:
             self.recheck_stats = _recheck_offers(db, items, now, cfg=cfg, source=source)
+        stored_conditions: dict[str, list[dict]] = {}
+        if cfg.woot_condition_lock and db is not None:
+            for deal in db.all_deals(status="alive"):
+                url = woot_offer_url(deal)
+                if url:
+                    stored_conditions.setdefault(url, []).append(deal)
 
         # Score every live offer, then select used before new, deepest
         # first (feed order breaks ties), up to the per-run cap. Posts the
@@ -424,6 +463,9 @@ class WootAdapter(SourceAdapter):
         for idx, item in enumerate(items):
             if not isinstance(item, dict) or item.get("IsSoldOut"):
                 continue
+            url = woot_offer_url({"canonical_url": item.get("Url")})
+            if any(_condition_mismatch(deal, item) for deal in stored_conditions.get(url, [])):
+                continue  # intake must not undo the recheck's condition lock
             ends = util.parse_iso(str(item.get("EndDate") or ""))
             if ends is not None and ends <= now:
                 continue  # already over
@@ -439,7 +481,7 @@ class WootAdapter(SourceAdapter):
         for _new, _pct, _idx, item in scored:
             if selected >= cfg.woot_max_items_per_run:
                 break
-            post = self._map_item(item, source, now)
+            post = self._map_item(item, source, now, condition_lock=cfg.woot_condition_lock)
             if post is None:
                 continue
             selected += 1
@@ -457,7 +499,7 @@ class WootAdapter(SourceAdapter):
 
     @staticmethod
     def _map_item(item: dict, source: SourceConfig,
-                  now: datetime) -> RawPost | None:
+                  now: datetime, *, condition_lock: bool = False) -> RawPost | None:
         uid = str(item.get("OfferId") or item.get("Id") or "")
         title = str(item.get("Title") or "")
         if not uid or not title:
@@ -499,6 +541,8 @@ class WootAdapter(SourceAdapter):
                 "evidence": {"final_price_quote": f"Sale price: {sale}",
                              "regular_price_quote": f"List price: {list_price}"},
             }
+            if condition_lock:
+                structured["woot_condition"] = condition
         return RawPost(
             source_name=source.name,
             uid=uid,

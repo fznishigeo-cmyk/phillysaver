@@ -126,6 +126,17 @@ _DEFERRED_RE = re.compile(
     r"cash[\s-]?back|gift[\s-]?card|store\s+credit|statement\s+credit|portal")
 _SALE_RE = re.compile(r"\b(?:sale|now|price)\b")
 _ABS_OFF_RE = re.compile(r"\boff\b|coupon|clip|discount|save")
+_AMOUNT = r"\d+(?:,\d{3})*(?:\.\d+)?"
+_ACCURACY_MONEY_RE = re.compile(r"\$\s*(" + _AMOUNT + r")")
+_SUBSCRIBE_RE = re.compile(r"\bsubscribe\s*(?:&|and)\s*save\b|\bs\s*&\s*s\b")
+_REWARDS_RE = re.compile(r"\bkohl['’]?s\s+cash\b|\brewards?\b")
+_FREE_DELIVERY_RE = re.compile(
+    r"\bfree\s+(?:(?:\d+|one|two|same|next)[\s-]*day\s+)?(?:shipping|delivery)\b")
+_MINIMUM_SPEND_RES = (
+    re.compile(r"\boff\s+(?:(?:orders?|purchases?)\s+(?:of\s+)?)?\$\s*(" + _AMOUNT + r")"),
+    re.compile(r"\bsave\s+\$\s*" + _AMOUNT + r"\s+on\s+\$\s*(" + _AMOUNT + r")"),
+    re.compile(r"\bminimum\s+(?:purchase|spend)(?:\s+of)?\s*:?\s*\$\s*(" + _AMOUNT + r")"),
+)
 
 _CHECKOUT_KINDS = ("pct_off", "abs_off", "sale_price")
 _REBATE_KINDS = ("rebate_abs", "rebate_pct")
@@ -263,7 +274,7 @@ def lowest_seen(observations: list[dict], condition: str, now: datetime) -> dict
 # public parsers
 # ---------------------------------------------------------------------------
 
-def parse_shipping(s: str) -> tuple[float | None, float | None]:
+def parse_shipping(s: str, *, accuracy_lite: bool = False) -> tuple[float | None, float | None]:
     """Parse the extracted shipping text into (stated_cost, free_threshold).
 
     Accepted forms (case-insensitive):
@@ -286,6 +297,9 @@ def parse_shipping(s: str) -> tuple[float | None, float | None]:
         rest = (text[: m.start()] + " " + text[m.end():]).strip()
 
     cost: float | None = None
+    if accuracy_lite:
+        # Delivery speed is not a dollar charge; retain any separate amount.
+        rest = _FREE_DELIVERY_RE.sub("free shipping", rest)
     cm = _NUMBER_RE.search(rest)
     if cm is not None:
         cost = float(cm.group(1))
@@ -294,7 +308,7 @@ def parse_shipping(s: str) -> tuple[float | None, float | None]:
     return (cost, threshold)
 
 
-def parse_stack_step(s: str) -> dict:
+def parse_stack_step(s: str, *, accuracy_lite: bool = False) -> dict:
     """Classify one stack step string into {'kind': ..., 'value': float | None}.
 
     kinds: 'pct_off' | 'abs_off' | 'rebate_abs' | 'rebate_pct' | 'sale_price'
@@ -302,7 +316,8 @@ def parse_stack_step(s: str) -> dict:
     """
     t = (s or "").strip().lower()
     pct_m = _PCT_RE.search(t)
-    money_m = _MONEY_RE.search(t)
+    money_m = (_ACCURACY_MONEY_RE if accuracy_lite else _MONEY_RE).search(t)
+    money = float(money_m.group(1).replace(",", "")) if money_m else None
 
     if _DEFERRED_RE.search(t):
         return {"kind": "deferred", "value": None}
@@ -310,17 +325,27 @@ def parse_stack_step(s: str) -> dict:
         if pct_m:
             return {"kind": "rebate_pct", "value": float(pct_m.group(1))}
         if money_m:
-            return {"kind": "rebate_abs", "value": float(money_m.group(1))}
+            return {"kind": "rebate_abs", "value": money}
         logger.debug("rebate step with no amount, ignored: %r", s)
         return {"kind": "unknown", "value": None}
+    discount_text = _SUBSCRIBE_RE.sub("", t) if accuracy_lite else t
     if pct_m:
-        return {"kind": "pct_off", "value": float(pct_m.group(1))}
-    if money_m and _SALE_RE.search(t) and "off" not in t:
-        return {"kind": "sale_price", "value": float(money_m.group(1))}
-    if money_m and _ABS_OFF_RE.search(t):
-        return {"kind": "abs_off", "value": float(money_m.group(1))}
-    logger.debug("unknown stack step, ignored for checkout math: %r", s)
-    return {"kind": "unknown", "value": None}
+        step = {"kind": "pct_off", "value": float(pct_m.group(1))}
+    elif money_m and _SALE_RE.search(t) and "off" not in t:
+        step = {"kind": "sale_price", "value": money}
+    elif money_m and (_ABS_OFF_RE.search(discount_text) or (
+            accuracy_lite and _SUBSCRIBE_RE.search(t)
+            and re.search(r"\b(?:extra|additional)\b", discount_text))):
+        step = {"kind": "abs_off", "value": money}
+    else:
+        logger.debug("unknown stack step, ignored for checkout math: %r", s)
+        return {"kind": "unknown", "value": None}
+    if accuracy_lite and step["kind"] in ("abs_off", "pct_off"):
+        for pattern in _MINIMUM_SPEND_RES:
+            if match := pattern.search(t):
+                step["minimum_spend"] = float(match.group(1).replace(",", ""))
+                break
+    return step
 
 
 def known_shipping(deal: dict) -> bool:
@@ -340,7 +365,8 @@ def known_shipping(deal: dict) -> bool:
 # public engine
 # ---------------------------------------------------------------------------
 
-def compute_savings(d: models.ExtractedDeal, *, allow_price_only: bool = False) -> models.SavingsResult:
+def compute_savings(d: models.ExtractedDeal, *, allow_price_only: bool = False,
+                    accuracy_lite: bool = False) -> models.SavingsResult:
     """Turn raw extracted facts into a SavingsResult, per SAVINGS_RULES.md."""
     # ---- Rule 1: gates first ----
     if (d.currency or "").strip().upper() != "USD" or (d.region or "").strip().upper() != "US":
@@ -368,12 +394,13 @@ def compute_savings(d: models.ExtractedDeal, *, allow_price_only: bool = False) 
     if ru == "per_unit" and fu == "per_unit":
         flags.append("per_unit")
 
-    ship_cost, ship_threshold = parse_shipping(d.shipping_cost_or_threshold)
+    ship_cost, ship_threshold = parse_shipping(d.shipping_cost_or_threshold,
+                                               accuracy_lite=accuracy_lite)
 
     checkout_steps: list[dict[str, Any]] = []
     rebate_steps: list[dict[str, Any]] = []
     for raw in d.stack_steps:
-        step = parse_stack_step(raw)
+        step = parse_stack_step(raw, accuracy_lite=accuracy_lite)
         if step["kind"] in _CHECKOUT_KINDS:
             checkout_steps.append(step)
         elif step["kind"] in _REBATE_KINDS:
@@ -381,9 +408,19 @@ def compute_savings(d: models.ExtractedDeal, *, allow_price_only: bool = False) 
         elif step["kind"] == "deferred" and "deferred_value" not in flags:
             flags.append("deferred_value")  # Rule 9: never enters any pct
     for raw in d.rebates:
-        step = _parse_rebate(raw)
+        step = _parse_rebate(raw, accuracy_lite=accuracy_lite)
         if step["kind"] in _REBATE_KINDS:
             rebate_steps.append(step)
+        elif step["kind"] == "deferred" and "deferred_value" not in flags:
+            flags.append("deferred_value")
+
+    # A stated final (including a range upper bound) is never discounted twice,
+    # but it must still establish eligibility for a minimum-spend offer.
+    stated = d.price_upper_bound if d.price_is_range else d.final_price
+    if stated is not None or not d.regular_price or d.deal_type:
+        base = stated if stated is not None else (d.regular_price if d.deal_type else None)
+        if any(_below_minimum_spend(step, base) for step in checkout_steps):
+            return models.SavingsResult(computable=False, exclude_reason="minimum_spend")
 
     # ---- Rules 7/8: deal-type driven math ----
     if d.deal_type in ("free_after_rebate", "moneymaker"):
@@ -410,10 +447,12 @@ def _has_in_store_condition(conditions: list[str]) -> bool:
     return False
 
 
-def _parse_rebate(s: str) -> dict:
+def _parse_rebate(s: str, *, accuracy_lite: bool = False) -> dict:
     """Parse one entry of ExtractedDeal.rebates (context: it IS a rebate)."""
-    step = parse_stack_step(s)
-    if step["kind"] in _REBATE_KINDS:
+    if accuracy_lite and _REWARDS_RE.search((s or "").strip().lower()):
+        return {"kind": "deferred", "value": None}
+    step = parse_stack_step(s, accuracy_lite=accuracy_lite)
+    if step["kind"] in _REBATE_KINDS or (accuracy_lite and step["kind"] == "deferred"):
         return step
     t = (s or "").strip().lower()
     m = _PCT_RE.search(t)
@@ -424,6 +463,11 @@ def _parse_rebate(s: str) -> dict:
         return {"kind": "rebate_abs", "value": float(m.group(1))}
     logger.debug("unparseable rebate string, ignored: %r", s)
     return {"kind": "unknown", "value": None}
+
+
+def _below_minimum_spend(step: dict, price: float | None) -> bool:
+    minimum = step.get("minimum_spend")
+    return minimum is not None and (price is None or round(price, 2) < round(minimum, 2))
 
 
 def _shipping_add(final: float, cost: float | None, threshold: float | None,
@@ -647,6 +691,9 @@ def _price_basis(d: models.ExtractedDeal, flags: list[str],
             # the stated-pct path below and keep its X% at checkout.
             running = reg
             for step in checkout_steps:
+                if _below_minimum_spend(step, running):
+                    logger.debug("excluded minimum_spend: %s", d.item)
+                    return models.SavingsResult(computable=False, exclude_reason="minimum_spend")
                 v = step["value"]
                 if v is None:
                     continue

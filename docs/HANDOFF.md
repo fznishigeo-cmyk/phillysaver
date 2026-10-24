@@ -244,6 +244,32 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Accuracy-lite (branch `accuracy-lite`, base `4841f40`, 2026-10-24; uncommitted):**
+  Three independent strict switches ship true; missing/false keeps the legacy
+  path: `savings.accuracy_lite`, `woot.condition_lock`, and
+  `amazon.renewed_title_lock`. Savings ignores a Subscribe & Save dollar price
+  without discount wording, enforces cents-rounded minimum spends, keeps rewards
+  in `rebates` deferred, and ignores free-delivery speeds as charges. Explicit
+  final/range prices keep their precedence; the short rulebook addition documents
+  eligibility. The pipeline and live-store repricing pass the savings switch.
+  Woot only locks explicit new/used mismatches with new-row API Condition
+  provenance; legacy/blank conditions keep updating, and used subtypes stay one
+  class. A skipped reading can expire the same explicit item ID, including a
+  changed URL. Same-URL intake cannot undo the recheck lock. Provenance is saved
+  only on new structured Woot rows, retained by existing payload filters; older
+  or unstructured rows remain unknown. Keepa's normal and focus NEW mappers reject
+  explicit renewed/refurbished title labels; actual Warehouse offers retain the
+  existing used lane. Existing Amazon used-off publication/spend exclusion covers
+  those labels without interpreting descriptive product-name words as conditions.
+  Historical pins follow `short_cards`. Evidence verification, identity functions,
+  dedupe matching, photo recovery, money caps and standing used-off policy are
+  unchanged. Test-first reproducers failed before implementation (S: 4, W: 22,
+  K: 30); frozen OFF comparisons cover 13 savings results, 36 Woot scenarios and
+  21 complete Keepa posts. Focused checks: savings 156, Woot 165, Keepa existing
+  144 plus 49 new, strict config 27; real pipeline switch/rerun 2. Combined
+  requested selection plus store-price/focus call sites: **728 passed in 193.58s**
+  with `-n 3`, including offline rerun idempotency; `git diff --check` clean.
+  Remaining: review and deployment; no commit or push requested or made.
 - **Best deals today category mix (Nishi 2026-10-24; uncommitted):**
   `publish.front_page.best_today_mix` ships ON for `/best-deals-today/` only:
   sexy 3, wow 2, seasonal 4, pets 3, kids 1, health 3, essentials 5, beauty 5,

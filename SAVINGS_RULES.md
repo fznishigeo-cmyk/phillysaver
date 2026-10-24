@@ -131,6 +131,19 @@ running: 80 → sale 40 → ×0.75 = **$30 checkout** → `pct_at_checkout = 62.
 with the $5 rebate: effective $25 → `pct_with_rebates = 68.8%` (68.75 before
 rounding); flag `rebate_dependent`.
 
+**Accuracy-lite (`savings.accuracy_lite`, missing/false preserves legacy):**
+Subscribe & Save wording alone does not make a dollar amount a discount:
+"Subscribe & Save $8.49" is an unknown, logged step; explicit extra/additional
+dollars, "save $2", or a stated percentage still apply. Minimum-spend coupons
+("$5 off $25", "Save $10 on $50+", "minimum purchase $50") require the
+cents-rounded running price to reach that threshold at that step; otherwise
+exclude with `minimum_spend`, with no guessed price. A stated final or evidenced
+range upper bound supplies the eligibility price and is never discounted again.
+Commas inside thousands and punctuation after amounts stay distinct. Kohl's
+Cash, gift cards, rewards and store credit in `rebates` are deferred value,
+excluded from both percentages. "Free 2-day shipping" and "FREE One-Day
+Delivery" cost zero; delivery speed is never a shipping charge.
+
 ## 6. Rebates in general
 
 `pct_at_checkout` **excludes all rebates** (it is what you pay today);

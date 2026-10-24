@@ -41,6 +41,7 @@ import httpx
 
 from .. import util
 from ..amazon_reference import list_reading, remember_list_price
+from ..amazon_used import renewed_title
 from ..config import AppConfig, get_secret, error_summary
 from ..db import DB
 from ..http_client import PoliteFetcher, api_fetcher
@@ -656,7 +657,8 @@ class KeepaDealsAdapter(SourceAdapter):
                     return None
             return self._map_row(row, source, now, floors=floors,
                                  category_names=pull.category_names,
-                                 list_ratio=cfg.keepa_list_price_min_avg_ratio)
+                                 list_ratio=cfg.keepa_list_price_min_avg_ratio,
+                                 renewed_title_lock=cfg.amazon_renewed_title_lock)
 
         def map_warehouse(row: dict[str, Any]) -> RawPost | None:
             return self._map_warehouse_row(
@@ -1253,11 +1255,14 @@ class KeepaDealsAdapter(SourceAdapter):
     def _map_row(row: dict[str, Any], source: SourceConfig, now: datetime,
                  *, floors: tuple[float, ...] = (),
                  category_names: dict[str, str] | None = None,
-                 list_ratio: float = 0.9, price_type: int = PRICE_TYPE_AMAZON) -> RawPost | None:
+                 list_ratio: float = 0.9, price_type: int = PRICE_TYPE_AMAZON,
+                 renewed_title_lock: bool = False) -> RawPost | None:
         asin = str(row.get("asin") or "").strip().upper()
         title = str(row.get("title") or "").strip()
         if not asin or not title:
             return None
+        if renewed_title_lock and renewed_title(title):
+            return None  # only the existing Warehouse lane may supply a used offer
         avg_raw = row.get("avg") or row.get("avg90") or row.get("avg30")
         current = _price_at(row.get("current"), price_type)
         basis = _amazon_basis(row, avg_raw, list_ratio, price_type)

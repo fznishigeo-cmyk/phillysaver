@@ -267,7 +267,8 @@ class Finder:
                     post = None if reason else self.adapter._map_row(
                         row, self.source, self.pull.now, floors=self.floors,
                         category_names=self.pull.category_names,
-                        list_ratio=self.cfg.keepa_list_price_min_avg_ratio, price_type=price_type)
+                        list_ratio=self.cfg.keepa_list_price_min_avg_ratio, price_type=price_type,
+                        renewed_title_lock=self.cfg.amazon_renewed_title_lock)
                     if not reason and post is None:
                         reason = "drop"
                     if not reason and self.pull.db is not None and self.pull.db.post_is_known(post.content_hash):

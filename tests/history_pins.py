@@ -461,6 +461,7 @@ def pre_task_319_raw(config):
     config.pop("plural_highly_rated", None)
     config.pop("equal_word_buttons", None)
     config.pop("short_cards", None)
+    pre_accuracy_lite_raw(config)
     config.pop("best_today_phone_cards", None)
     config.pop("price_shipping_note", None)
     config.pop("add_to_cart", None)
@@ -556,6 +557,7 @@ def pre_hide_deal_site_links_raw(config):
     config.pop("plural_highly_rated", None)
     config.pop("equal_word_buttons", None)
     config.pop("short_cards", None)
+    pre_accuracy_lite_raw(config)
     config.pop("best_today_phone_cards", None)
     config.pop("price_shipping_note", None)
     config.pop("add_to_cart", None)
@@ -589,6 +591,7 @@ def pre_keepa_focus_finder_raw(config):
     config.pop("plural_highly_rated", None)
     config.pop("equal_word_buttons", None)
     config.pop("short_cards", None)
+    pre_accuracy_lite_raw(config)
     config.pop("best_today_phone_cards", None)
     config.pop("price_shipping_note", None)
     config.pop("add_to_cart", None)
@@ -680,6 +683,7 @@ def pre_keepa_starter_raw(config):
     config.pop("plural_highly_rated", None)
     config.pop("equal_word_buttons", None)
     config.pop("short_cards", None)
+    pre_accuracy_lite_raw(config)
     config.pop("best_today_phone_cards", None)
     config.pop("price_shipping_note", None)
     config.pop("add_to_cart", None)
@@ -760,6 +764,7 @@ def pre_social_profiles(cfg):
     pre_plural_highly_rated(cfg)
     pre_equal_word_buttons(cfg)
     pre_short_cards(cfg)
+    pre_accuracy_lite(cfg)
     pre_best_today_phone_cards(cfg)
     return cfg
 
@@ -834,6 +839,21 @@ def pre_short_cards(cfg):
     """Before the shorter deal cards: no headline, steps and "Enter Code" lines, smaller Get deal (operator 2026-10-24, A58)."""
     cfg.short_cards = False
     return cfg
+
+
+def pre_accuracy_lite(cfg):
+    """Before the narrow savings, Woot condition and Amazon renewed-title guards."""
+    cfg.savings_accuracy_lite = False
+    cfg.woot_condition_lock = False
+    cfg.amazon_renewed_title_lock = False
+    return cfg
+
+
+def pre_accuracy_lite_raw(config):
+    config.pop("savings", None)
+    config.pop("amazon", None)
+    config.get("woot", {}).pop("condition_lock", None)
+    return config
 
 
 def pre_best_today_phone_cards(cfg):

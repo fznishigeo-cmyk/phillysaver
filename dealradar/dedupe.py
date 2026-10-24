@@ -27,7 +27,8 @@ from . import models, util
 
 log = logging.getLogger("dealradar.dedupe")
 
-_DEAL_FIELDS = tuple(f.name for f in dataclass_fields(models.Deal))
+_DEAL_FIELDS = tuple(f.name for f in dataclass_fields(models.Deal)) + (
+    "woot_condition", "woot_offer_id")  # optional provenance; absent on legacy rows
 
 
 def canonical_key(store: str, canonical_url: str, item: str) -> str:
@@ -313,6 +314,10 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
         key = canonical_key(extracted.store, extracted.product_url,
                             extracted.item)
         payload = _new_payload(key, extracted, savings, asin, now)
+        if cfg.woot_condition_lock and post.source_name == "woot" \
+                and "woot_condition" in (post.structured or {}):
+            payload["woot_condition"] = post.structured["woot_condition"]
+            payload["woot_offer_id"] = post.uid
         payload["online_only_published_at"] = (
             util.iso(post_at) if extracted.online_only in ("true", "false") else "")
         payload["expires_published_at"] = util.iso(post_at) if extracted.expires_at else ""
@@ -614,7 +619,8 @@ def reprice_existing(db, deal: dict[str, Any], post: models.RawPost,
     if not verify_evidence(extracted, post.text)[0]:
         return False
     exact_buybox = buybox and cfg.keepa_click_price_rule == "on"
-    savings = compute_savings(extracted, allow_price_only=True) if retailer or exact_buybox else compute_savings(extracted)
+    savings = compute_savings(extracted, allow_price_only=retailer or exact_buybox,
+                              accuracy_lite=cfg.savings_accuracy_lite)
     if not savings.computable or savings.final_price is None:
         return False
     shown = current.get("final_price")

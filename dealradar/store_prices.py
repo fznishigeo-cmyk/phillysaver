@@ -494,7 +494,8 @@ def recheck_store_prices(db, cfg, now: datetime, *, fetcher=None, deadline=None,
                             if post is not None:
                                 # Shipping arithmetic stays in savings.py, as at ingest.
                                 ext = to_extracted(LLMDeal.model_validate(post.structured), post, "UTC", now)
-                                live = (compute_savings(ext, allow_price_only=True).final_price
+                                live = (compute_savings(ext, allow_price_only=True,
+                                                        accuracy_lite=cfg.savings_accuracy_lite).final_price
                                         if verify_evidence(ext, post.text)[0] else None)
                                 if live is not None:
                                     accuracy.record(db, cfg, deal["dedupe_key"], now, source=store,

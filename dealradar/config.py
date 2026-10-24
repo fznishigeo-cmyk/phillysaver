@@ -260,6 +260,7 @@ class AppConfig:
 
     raw: dict[str, Any] = field(default_factory=dict)
     accuracy_extra_samples_per_day: int = 0
+    savings_accuracy_lite: bool = False
     checker: dict = field(default_factory=lambda: validated_checker({}))
     compare: dict = field(default_factory=lambda: validated_compare({}))
     extension: dict = field(default_factory=lambda: validated_extension({}))
@@ -631,6 +632,7 @@ class AppConfig:
     social_extreme_pct: float = 80.0
 
     amazon_used_enabled: bool = True
+    amazon_renewed_title_lock: bool = False
     keepa_focus_finder: dict[str, Any] = field(default_factory=lambda: validated_keepa_focus_finder({}))
 
     # -- keepa: /deal paging on the token plan (config.yaml keepa:) --
@@ -695,6 +697,7 @@ class AppConfig:
     keepa_sweep_asins_per_pull: int = 100
     keepa_sweep_reserve_tokens: float = 400.0  # kept on top of reserve_tokens
     # -- woot --
+    woot_condition_lock: bool = False
     woot_max_items_per_run: int = 300
     woot_max_new_items_per_run: int = 20      # unseen posts per run
     woot_feed_pages: int = 1
@@ -1011,6 +1014,14 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         return cur
 
     cfg = AppConfig(raw=raw)
+    for section, name, attr in (
+            ("savings", "accuracy_lite", "savings_accuracy_lite"),
+            ("woot", "condition_lock", "woot_condition_lock"),
+            ("amazon", "renewed_title_lock", "amazon_renewed_title_lock")):
+        settings = raw.get(section, {})
+        if not isinstance(settings, dict) or type(settings.get(name, False)) is not bool:
+            raise ValueError(f"{section}.{name} must be a boolean")
+        setattr(cfg, attr, settings.get(name, False))
     cfg.tool_pages = validated_tool_pages(raw.get("tool_pages", {}))
     cfg.deal_spotter = validated_deal_spotter(raw.get("deal_spotter", {}))
     cfg.add_to_cart = validated_add_to_cart(raw.get("add_to_cart", {}))
