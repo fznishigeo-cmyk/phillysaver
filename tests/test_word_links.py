@@ -49,17 +49,19 @@ console.log(JSON.stringify(result));
 def words_box(script, *typed):
     lines = [re.search(r"^var " + name + r" ?=.*$", script, re.M)[0] for name in ("toolSettings", "analyzeExclude", "nameHint")]
     code = "\n".join(lines + shared_functions(script, ("analyzeInput", "analyzeAdult", "searchAmazonQuery", "toolQuery",
-                                                        "discountsLink", "toolDiscount", "highlyRatedUrl", "namePanelRated",
-                                                        "namePanel")))
+                                                        "discountsLink", "toolDiscount", "highlyRatedUrl",
+                                                        *(("ratedWords",) if "function ratedWords(" in script else ()),
+                                                        "namePanelRated", "namePanel")))
     result = subprocess.run(["node", "-e", WORDS_BOX, json.dumps(typed)], input=code, capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stderr
     return json.loads(result.stdout)
 
 
 def box(blue, yellow):
+    # The yellow one names the plural (plural_highly_rated, operator 2026-10-24); its link keeps "vacuum".
     return {"hidden": False, "links": [
         ["words-discounts", "See vacuum discounts on Amazon →", blue, "_blank", "sponsored noopener"],
-        ["name-button", "See highly rated vacuum on Amazon →", yellow, "_blank", "sponsored noopener"]]}
+        ["name-button", "See highly rated vacuums on Amazon →", yellow, "_blank", "sponsored noopener"]]}
 
 
 @pytest.fixture(scope="module")

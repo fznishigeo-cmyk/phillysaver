@@ -7,7 +7,7 @@ from html import escape
 from pathlib import Path
 
 from ..config import validated_review_checker
-from . import amazon_as_of, deal_spotter, search_boost, seo, shipping_note, tool_pages, tools_merge, tracking, words_analyzer
+from . import amazon_as_of, deal_spotter, equal_word_buttons, plural_highly_rated, search_boost, seo, shipping_note, tool_pages, tools_merge, tracking, words_analyzer
 
 TEMPLATES = Path(__file__).with_name("templates")
 PATHS = ("/review-checker/", "/reviewmeta-alternative/")
@@ -65,7 +65,7 @@ def script(cfg):
     source = tool_pages.script(cfg)
     names = deal_spotter.shared_functions(source, ("toolQuery", "searchAmazonQuery", "analyzeAdult"))
     script = ('"use strict";\nvar toolSettings=' + json.dumps(settings).replace("<", "\\u003c") + ';\n'
-              + shared + '\n' + '\n'.join([deal_spotter.EXCLUDE, *names, (TEMPLATES / "tool-name-panel.js").read_text()])
+              + shared + '\n' + '\n'.join([deal_spotter.EXCLUDE, *names, plural_highly_rated.name_panel(cfg)])
               + (TEMPLATES / "review-checker.js").read_text())
     script = tools_merge.review_script(script, source) if tools_merge.enabled(cfg) else script
     script = words_analyzer.review_script(script, cfg)
@@ -129,7 +129,8 @@ def publish(out, cfg, now, site_url, disclosure):
     stores = {d["store"].casefold() for d in live if d.get("store")}
     assets = {}
     merged = tools_merge.enabled(cfg)
-    css = (TEMPLATES / "review-checker.css").read_text() + (tools_merge.REVIEW_CSS if merged else '') + shipping_note.review_css(cfg)
+    css = ((TEMPLATES / "review-checker.css").read_text() + (tools_merge.REVIEW_CSS if merged else '') + shipping_note.review_css(cfg)
+           + equal_word_buttons.review_css(cfg))
     for suffix, content in (("js", script(cfg)), ("css", css)):
         (out / ("review-checker." + suffix)).write_text(content)
         assets[suffix] = hashlib.sha256(content.encode()).hexdigest()[:12]

@@ -90,7 +90,7 @@ const SPOTTER_STEPS = ['Searching our verified deals..', 'Finding discounts on A
         assert(deals.length === 2 && deals.every(t => /vacuum/i.test(t)), deals.join(' | '));
       }
 
-      // Fake Deal Spotter: the link's blue analyzer (radar, progress, today's deals, ×), steps about the search.
+      // Fake Deal Spotter: the link's blue analyzer (radar, progress, See today's deals, ×), steps about the search.
       await page.goto('https://wowpriced.test/deal-spotter/'); await page.clock.runFor(500);
       await page.locator('#q').fill('vacuum'); await page.locator('.hero-box button').click();
       const modal = page.locator('#analyze-modal');
@@ -98,7 +98,7 @@ const SPOTTER_STEPS = ['Searching our verified deals..', 'Finding discounts on A
       assert.equal(await text('#modal-product'), 'vacuum');
       assert.equal(await text('#modal-status'), 'Searching for deals, please wait..');
       assert.equal(await text('#modal-step'), SPOTTER_STEPS[0]);
-      assert.equal(await page.locator('.rec-card').count(), 3);
+      assert.equal(await page.locator('#analyze-modal :is(.recommends, .rec-card)').count(), 0);  // hide_spotter_recommends (operator 2026-10-24)
       assert(await page.locator('#modal-deals').isVisible()); assert.equal(await focused(), 'cancel-analysis');
       assert(await page.locator('.radar').isVisible());
       assert.equal(await page.evaluate(() => document.body.style.overflow), 'hidden');
@@ -111,7 +111,7 @@ const SPOTTER_STEPS = ['Searching our verified deals..', 'Finding discounts on A
       assert(await modal.isVisible(), 'a link\'s wait: 10 s at the shortest');
       await page.clock.runFor(3100);
       assert(await modal.isHidden()); assert(await page.locator('#name-results').isVisible());
-      await wordsBox('See highly rated vacuum on Amazon →');
+      await wordsBox('See highly rated vacuums on Amazon →');
       assert.equal(await page.evaluate(() => document.body.style.overflow), '');
       await page.locator('#name-results').evaluate(el => el.scrollIntoView({block:'center', behavior:'instant'}));
       await noScroll(); await shot('spotter-result');
@@ -140,7 +140,7 @@ const SPOTTER_STEPS = ['Searching our verified deals..', 'Finding discounts on A
       await page.goto('https://wowpriced.test/amazon-discount-finder/?q=vacuum'); await page.clock.runFor(500);
       assert(await modal.isVisible()); assert.equal(await text('#modal-product'), 'vacuum');
       await page.clock.runFor(10000);
-      await wordsBox('See highly rated vacuum on Amazon →');
+      await wordsBox('See highly rated vacuums on Amazon →');
       assert.deepEqual(calls, []);
 
       // Review Checker: the link's check box (spinner, progress, ×), steps about the search.
@@ -158,7 +158,7 @@ const SPOTTER_STEPS = ['Searching our verified deals..', 'Finding discounts on A
       await page.clock.runFor(2000); assert.equal(await text('#loading-step'), SPOTTER_STEPS[2]); assert(await loading.isVisible());
       await page.clock.runFor(3100);
       assert(await loading.isHidden()); assert(await page.locator('#name-results').isVisible());
-      await wordsBox('See highly rated vacuum on Amazon →');
+      await wordsBox('See highly rated vacuums on Amazon →');
       await page.locator('#name-results').evaluate(el => el.scrollIntoView({block:'center', behavior:'instant'}));
       await noScroll(); await shot('review-result');
       assert.deepEqual(calls, [], 'typed words must not call /api/search');
@@ -186,7 +186,7 @@ const SPOTTER_STEPS = ['Searching our verified deals..', 'Finding discounts on A
         await page.locator(field).fill('vacuum'); await page.locator(button).click();
         assert(await page.locator(box).isHidden(), url + ' off: no analyzer');
         assert(await page.locator('#name-results').isVisible(), url + ' off: box at once');
-        await wordsBox('See highly rated vacuum on Amazon →');
+        await wordsBox('See highly rated vacuums on Amazon →');
       }
       assert.deepEqual(calls, []);
 

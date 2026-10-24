@@ -456,6 +456,9 @@ def pre_task_319_raw(config):
     config.pop("keep_first_cards", None)
     config.pop("best_today_tab", None)
     config.pop("phone_first_screen", None)
+    config.pop("hide_spotter_recommends", None)
+    config.pop("plural_highly_rated", None)
+    config.pop("equal_word_buttons", None)
     config.pop("price_shipping_note", None)
     config.pop("add_to_cart", None)
     pre_social_profiles_raw(config)
@@ -545,6 +548,9 @@ def pre_hide_deal_site_links_raw(config):
     config.pop("keep_first_cards", None)
     config.pop("best_today_tab", None)
     config.pop("phone_first_screen", None)
+    config.pop("hide_spotter_recommends", None)
+    config.pop("plural_highly_rated", None)
+    config.pop("equal_word_buttons", None)
     config.pop("price_shipping_note", None)
     config.pop("add_to_cart", None)
     pre_social_profiles_raw(config)
@@ -572,6 +578,9 @@ def pre_keepa_focus_finder_raw(config):
     config.pop("keep_first_cards", None)
     config.pop("best_today_tab", None)
     config.pop("phone_first_screen", None)
+    config.pop("hide_spotter_recommends", None)
+    config.pop("plural_highly_rated", None)
+    config.pop("equal_word_buttons", None)
     config.pop("price_shipping_note", None)
     config.pop("add_to_cart", None)
     pre_social_profiles_raw(config)
@@ -657,6 +666,9 @@ def pre_keepa_starter_raw(config):
     config.pop("keep_first_cards", None)
     config.pop("best_today_tab", None)
     config.pop("phone_first_screen", None)
+    config.pop("hide_spotter_recommends", None)
+    config.pop("plural_highly_rated", None)
+    config.pop("equal_word_buttons", None)
     config.pop("price_shipping_note", None)
     config.pop("add_to_cart", None)
     pre_social_profiles_raw(config)
@@ -730,6 +742,9 @@ def pre_social_profiles(cfg):
     pre_keep_first_cards(cfg)
     pre_best_today_tab(cfg)
     pre_phone_first_screen(cfg)
+    pre_hide_spotter_recommends(cfg)
+    pre_plural_highly_rated(cfg)
+    pre_equal_word_buttons(cfg)
     return cfg
 
 
@@ -766,6 +781,24 @@ def pre_best_today_tab(cfg):
 def pre_phone_first_screen(cfg):
     """Before phones showed the first deals and their buttons on the first screen (operator 2026-10-23)."""
     cfg.phone_first_screen = False
+    return cfg
+
+
+def pre_hide_spotter_recommends(cfg):
+    """Before the analyzer box lost its "wowpriced recommends" strip (operator 2026-10-24 ~04:00Z)."""
+    cfg.hide_spotter_recommends = False
+    return cfg
+
+
+def pre_plural_highly_rated(cfg):
+    """Before the yellow button named its words in the plural (operator 2026-10-24 ~04:00Z)."""
+    cfg.plural_highly_rated = False
+    return cfg
+
+
+def pre_equal_word_buttons(cfg):
+    """Before the words box's two buttons shared the wider one's width (operator 2026-10-24 ~03:55Z)."""
+    cfg.equal_word_buttons = False
     return cfg
 
 

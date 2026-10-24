@@ -12,7 +12,7 @@ from urllib.parse import urlsplit
 from ..config import social_profiles
 from ..savings import tool_meter
 from ..util import parse_iso
-from . import add_to_cart, amazon_as_of, seo, tool_pages, tools_merge, tracking, words_analyzer
+from . import add_to_cart, amazon_as_of, equal_word_buttons, plural_highly_rated, seo, spotter_recommends, tool_pages, tools_merge, tracking, words_analyzer
 
 TEMPLATES = Path(__file__).with_name("templates")
 SLUGS = ("deal-spotter", "fakespot-alternative")
@@ -86,7 +86,7 @@ def script(cfg):
     # toolSimilar receives an Amazon input, so its title path is the checker path.
     glue = ('var toolActive = null; function searchText() { return document.getElementById("q").value.trim(); }\n'
             'function discountsLink() { return null; }\n')
-    result = '\n'.join([settings, EXCLUDE, *functions, glue, (TEMPLATES / "tool-name-panel.js").read_text(),
+    result = '\n'.join([settings, EXCLUDE, *functions, glue, plural_highly_rated.name_panel(cfg),
                         (TEMPLATES / "deal-spotter.js").read_text()])
     if tools_merge.enabled(cfg):
         result = tools_merge.spotter_script(result, cfg, source)
@@ -279,7 +279,8 @@ def publish(out, cfg, now, site_url, disclosure):
                        f'phoneDelay = {cfg.pwa_install_phone_delay_s * 1000}', 1)
                    if name == "deal-spotter-install.js" else (TEMPLATES / name).read_text())
         if name == 'deal-spotter.css':
-            content += (TEMPLATES / 'deal-spotter-menu.css').read_text() + (tools_merge.SPOTTER_CSS if merged else '')
+            content += ((TEMPLATES / 'deal-spotter-menu.css').read_text() + (tools_merge.SPOTTER_CSS if merged else '')
+                        + equal_word_buttons.spotter_css(cfg))
         (out / name).write_text(content)
         versions[name] = hashlib.sha256(content.encode()).hexdigest()[:12]
     amazon_store = (out / "stores" / "amazon" / "index.html").exists()
@@ -324,7 +325,7 @@ def publish(out, cfg, now, site_url, disclosure):
             STORES=stores_row(rows), DEAL_COUNT=f'{len(rows):,}', STORE_COUNT=str(len({d["store"].casefold() for d in rows if d.get("store")})),
             TOP_DEALS=cards(rows), DISCLAIMER=amazon_as_of.DISCLAIMER,
             INSTALL_HELP=(TEMPLATES / 'pwa-install-help.html').read_text() if cfg.pwa_enabled else '',
-            **(tools_merge.spotter_tokens(rows, reviews_on(cfg)) if merged else {}))
+            **(spotter_recommends.tokens(tools_merge.spotter_tokens(rows, reviews_on(cfg)), cfg) if merged else {}))
         if slug == 'deal-spotter' or page:
             html = words_analyzer.landing_page(add_to_cart.spotter_page(html, cfg), cfg)
         seo._write_page(out, '/' + slug + '/', tracking.inject(html, tracking.head_snippet(cfg)))

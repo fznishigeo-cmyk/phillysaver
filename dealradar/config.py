@@ -434,6 +434,9 @@ class AppConfig:
     keep_first_cards: bool = False     # the module's first render patches the server's cards in place
     best_today_tab: bool = False       # a "Best today" link pill after Trending in the home tab row
     phone_first_screen: bool = False   # phones: the first deals and their buttons on the first screen
+    hide_spotter_recommends: bool = False  # no "wowpriced recommends" strip in the analyzer box
+    plural_highly_rated: bool = False  # "See highly rated vacuums": the yellow button's plural, when safe
+    equal_word_buttons: bool = False   # the words box's two buttons at the wider one's width
     search_circle: bool = False
     search_analyze: dict = field(default_factory=lambda: validated_search_analyze(None))
     analyze_top_sellers: bool = False
@@ -1359,6 +1362,15 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.phone_first_screen = g("phone_first_screen", default=False)
     if type(cfg.phone_first_screen) is not bool:
         raise ValueError("phone_first_screen must be a boolean")
+    cfg.hide_spotter_recommends = g("hide_spotter_recommends", default=False)
+    if type(cfg.hide_spotter_recommends) is not bool:
+        raise ValueError("hide_spotter_recommends must be a boolean")
+    cfg.plural_highly_rated = g("plural_highly_rated", default=False)
+    if type(cfg.plural_highly_rated) is not bool:
+        raise ValueError("plural_highly_rated must be a boolean")
+    cfg.equal_word_buttons = g("equal_word_buttons", default=False)
+    if type(cfg.equal_word_buttons) is not bool:
+        raise ValueError("equal_word_buttons must be a boolean")
     cfg.search_circle = g("search_circle", default=False)
     if type(cfg.search_circle) is not bool:
         raise ValueError("search_circle must be a boolean")
