@@ -16,7 +16,7 @@ from dealradar.db import DB
 from dealradar.publish import seo, site
 from dealradar.publish.site import _serialize_deal
 from dealradar.publish.telegram_pub import format_message, tier_rank
-from tests.history_pins import pre_trusted_sources
+from tests.history_pins import pre_social_profiles, pre_trusted_sources
 from tests.test_front_page import options, pick_deal  # noqa: F401 (fixture)
 from tests.test_publish_site import NOW as SITE_NOW, make_deal
 from tests.test_pwa import tree_hash
@@ -139,9 +139,10 @@ def test_rendered_card_and_deal_page(db, cfg, tmp_path):
     assert "not yet independently confirmed" not in page and "2+ sources" not in page
 
 
-#: The whole shipped site after verify.refresh_tiers, recorded at af1674b
-#: (before verify.trusted_sources): one Slickdeals-only and one Hip2Save-only deal.
-RECORDED_OFF = "e1ae53d2edd0acd74f641377110d99416e4083f984c1bce7c94d3f374a5fcc75"
+#: The whole shipped site after verify.refresh_tiers with later switches pinned:
+#: one Slickdeals-only and one Hip2Save-only deal. Knob empty matched af1674b's
+#: bytes at b6ba4e7; re-recorded at the relR merge with pre_social_profiles.
+RECORDED_OFF = "d6e11d25500d601aac51d785010e6ee19831ba6f08e9c2710608a45b7713ec8a"
 
 
 def _tiered_site(tmp_path, cfg, monkeypatch):
@@ -168,9 +169,10 @@ def _tiered_site(tmp_path, cfg, monkeypatch):
 
 
 def test_empty_knob_is_the_recorded_site(tmp_path, monkeypatch):
-    off = _tiered_site(tmp_path / "off", pre_trusted_sources(load_config()), monkeypatch)
+    # Later site switches are pinned (pre_social_profiles), so only this knob moves the bytes.
+    off = _tiered_site(tmp_path / "off", pre_trusted_sources(pre_social_profiles(load_config())), monkeypatch)
     assert tree_hash(off) == RECORDED_OFF
-    on = _tiered_site(tmp_path / "on", load_config(), monkeypatch)
+    on = _tiered_site(tmp_path / "on", pre_social_profiles(load_config()), monkeypatch)
     assert tree_hash(on) != RECORDED_OFF
     public = json.loads((on / "deals.json").read_text())["deals"]
     assert sorted((d["badge"], d["headline"].rsplit(". ", 1)[-1]) for d in public) == [

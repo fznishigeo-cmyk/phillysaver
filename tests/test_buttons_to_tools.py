@@ -11,7 +11,8 @@ from dealradar.config import AppConfig, load_config
 from dealradar.publish import buttons_to_tools as feature, tracking
 from dealradar.publish.seo_audit import Page
 from scripts.publication_budget import analyze
-from tests.history_pins import pre_buttons_to_tools, pre_card_click_1020, pre_front_mix, pre_search_discounts_button
+from tests.history_pins import (pre_best_today_tab, pre_buttons_to_tools, pre_card_click_1020, pre_front_mix,
+                                 pre_search_discounts_button)
 from tests.phone_budget_fixture import publish_fixture, visible_offer_count
 from tests.test_home_comment_strip import files
 from tests.test_pwa import tree_hash
@@ -140,6 +141,7 @@ def test_private_tracking(tmp_path):
 
 def test_phone_gzip_reserve(tmp_path):
     cfg = pre_front_mix(load_config())  # The mix's card selection is guarded in test_front_mix (no added markup, bounded card cost).
+    pre_best_today_tab(cfg)  # The home pill's ~60 bytes are bounded in test_best_today_tab (ceiling kept with it on).
     cfg.phone_budget['enabled'] = True
     def inspect(db, out):
         report = analyze(out, cfg, expected_offers=visible_offer_count(cfg))
