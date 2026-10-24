@@ -549,6 +549,68 @@ publish:
       # while one of these buckets is behind its share, its checkout-priced cards skip the homepage drop's
       # checkout spacing (1 in 5); they never count toward it. Other buckets keep it. [] = spacing for all.
       checkout_spacing_exempt: [beauty]
+    # Nishi 2026-10-24: "Mix of 30: I AGREE IMPLEMENT IT" (essentials 6, beauty 5, home 5,
+    # health 4, seasonal 4, pets 3, wow 2, kids 1) + "sex sells so make sure to include sexy items too"
+    # -> sexy 3, taken from essentials (6->5), home (5->4), health (4->3). Best deals today only.
+    best_today_mix:
+      enabled: true
+      per: 30
+      buckets:
+        sexy:
+          share: 3
+          groups: [allure]
+          exclude_words: [cologne, boxer briefs, swim trunks, men, mens, boys]
+        wow:
+          share: 2
+          words: [lego, shark, dyson, ninja, kitchenaid, airpods, apple watch, ipad, macbook,
+                  bose, sony, samsung, keurig, instant pot, roomba, irobot, vitamix, le creuset,
+                  stanley, yeti, beats, kindle, nintendo, cuisinart, nespresso, theragun, sonicare, oral-b]
+          exclude_words: [case, cover, screen protector, compatible, replacement, filter, filters,
+                          k cup, pods, for apple, for samsung]
+        seasonal:
+          share: 4
+          season: true
+          words: [hand warmer, hand warmers, heated blanket, electric blanket, christmas,
+                  ornament, advent calendar, stocking stuffer]
+        pets:
+          share: 3
+          words: [dog, dogs, puppy, cat, cats, kitten, pet, pets, cat litter, leash, bully sticks,
+                  dog treats, aquarium]
+          categories: [pets]
+          exclude_words: [hot dog, cat eye]
+        kids:
+          share: 1
+          groups: [kids]
+          words: [kids, toddler, baby, girls, boys, children, toy]
+          categories: [kids_baby, toys_games]
+        health:
+          share: 3
+          words: [vitamin, vitamins, supplement, supplements, probiotic, magnesium, fish oil,
+                  omega 3, protein powder, protein shake, electrolyte, insoles, knee brace,
+                  back brace, compression socks, heating pad, massager, massage gun, thermometer,
+                  blood pressure monitor, first aid, pain relief, melatonin, creatine]
+          exclude_words: [weight loss, fat burner, appetite suppressant, detox]
+        essentials:
+          share: 5
+          groups: [everyday]
+          categories: [health, grocery]
+        beauty:
+          share: 5
+          groups: [beauty]
+          categories: [beauty]
+          exclude_words: [air conditioner, nail gun]
+        home_kitchen:
+          share: 4
+          words: [cookware, dinnerware, dinner plates, plate set, mixing bowls, serving bowls, bowl set,
+                  mug, mugs, drinking glasses, wine glasses, glassware, utensils, flatware, silverware,
+                  cutlery, knife set, cutting board, food storage containers, air fryer, blender,
+                  coffee maker, toaster, kettle, slow cooker, pressure cooker, stand mixer, bakeware,
+                  baking sheet, frying pan, skillet, saucepan, dutch oven, kitchen,
+                  curtains, sheet set, comforter, pillow, pillows, throw blanket, bath towels,
+                  towels, rug, storage, organizer, lamp, candle, diffuser, vacuum, mop, air purifier, humidifier]
+          categories: [kitchen, home]
+        rest:
+          share: 0
     popular_affordable:        # task 255: private Amazon popularity + low checkout price
       enabled: true            # operator 2026-10-17: "gadgets that people will actually buy" (bestsellers ≥1000/month); shadow ran since Oct 16
       shadow: true             # encrypted-state comparison; private growth report only

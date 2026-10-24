@@ -32,7 +32,7 @@ def setup_env(tmp_path):
                      "dealradar/__init__.py", "dealradar/config.py", "dealradar/models.py",
                      "dealradar/clicks.py", "dealradar/util.py", "dealradar/source_policy.py",
                      "dealradar/appeal.py", "dealradar/appeal_score.py", "dealradar/errors.py", "dealradar/conditions.py",
-                     "dealradar/front_mix.py",
+                     "dealradar/front_mix.py", "dealradar/best_today_mix.py",
                      "dealradar/state_size.py", "dealradar/state_retention.py",
                      "sources.yaml"):
         target = tmp_path / relative

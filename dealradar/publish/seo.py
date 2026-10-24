@@ -1302,8 +1302,10 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     confirmed = [d for d in live if not d.get("price_unconfirmed") and not d.get("price_aged")]
     intro = (f"The {min(30, len(confirmed))} best of {count} live deals right now."
              if confirmed else "Our top picks are selected from offers that pass our price checks.")
-    from ..front_mix import lead
-    best_rows = lead(pick_order(confirmed, cfg.front_page), cfg.front_page, best_extra)[:30]
+    from .. import best_today_mix, front_mix
+    best_fp = best_today_mix.front_page(cfg.front_page, now)
+    mix_lead = best_today_mix.lead if best_fp is not cfg.front_page else front_mix.lead
+    best_rows = mix_lead(pick_order(confirmed, cfg.front_page), best_fp, best_extra)[:30]
     best_content = ('<h2 class="sr-only">Best live deals</h2>' + _best_summary(best_rows)
                     + '<div class="grid">' + cards_html(best_rows, paths, now, static_photos=cfg.static_photos,
                                                        credit_links=cfg.credit_links)
