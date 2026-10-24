@@ -730,6 +730,7 @@ def pre_social_profiles(cfg):
     pre_keep_first_cards(cfg)
     pre_best_today_tab(cfg)
     pre_phone_first_screen(cfg)
+    pre_hot_find(cfg)
     return cfg
 
 
@@ -754,6 +755,12 @@ def pre_soft_buttons(cfg):
 def pre_keep_first_cards(cfg):
     """Before the home wall kept the server's cards (quality loop 2026-10-23: phone LCP / taps)."""
     cfg.keep_first_cards = False
+    return cfg
+
+
+def pre_hot_find(cfg):
+    """Before the "Price drop" flag read "Hot Find" (operator 2026-10-24)."""
+    cfg.price_drop_label = "Price drop"
     return cfg
 
 
@@ -783,6 +790,7 @@ def pre_add_to_cart(cfg):
 
 def pre_social_profiles_raw(config):
     config.get("social", {}).pop("profiles", None)
+    config.get("publish", {}).pop("price_drop_label", None)
     pre_front_mix_raw(config)
     return config
 

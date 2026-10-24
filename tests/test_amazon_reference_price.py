@@ -14,7 +14,7 @@ from dealradar.db import DB
 from dealradar.fetch.keepa import KeepaDealsAdapter, _FeedConfirmations
 from dealradar.parse.extractor import verify_evidence
 from dealradar.parse.schema import LLMDeal, to_extracted
-from dealradar.publish import meta, pinterest, seo, site, telegram_pub
+from dealradar.publish import hot_find, meta, pinterest, seo, site, telegram_pub
 from dealradar.publish.email_policy import email_deal
 from tests.test_publish_site import make_deal, NOW
 from tests.test_seo_deal_pages import _path
@@ -95,7 +95,8 @@ def test_shipping_category_copy_does_not_advertise_hidden_discount_floors(tmp_pa
         assert result['public_deals'][0]['pct_at_checkout'] == expected
         hub = (tmp_path / 'deals/home-kitchen/index.html').read_text()
         assert 'Kitchen Widget' in hub
-        assert ('List price <s>$10.50</s>' if listed else 'Price drop') in hub
+        # The flag reads the configured label (hot_find: "Hot Find" since 2026-10-24).
+        assert ('List price <s>$10.50</s>' if listed else f'<span class="flag">{hot_find.label(cfg)}</span>') in hub
         for _label, _group, slug in seo.HUB_GROUPS:
             html = (tmp_path / 'deals' / slug / 'index.html').read_text()
             description = re.search(r'<meta name="description" content="([^"]*)">', html)[1]
