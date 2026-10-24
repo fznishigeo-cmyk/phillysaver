@@ -53,6 +53,18 @@ def test_shipped_on_default_off_strict(tmp_path):
             load_config(path)
 
 
+
+def test_needs_the_home_passes_it_copies():
+    """Codex review 10-24: without header_polish, tools_merge or page_polish the copy would fail
+    (tabs outside <header>) or misroute (old tool paths, no ?analyze= handler); the page keeps
+    its own header instead."""
+    cfg = load_config()
+    assert best_today_header.enabled(cfg)
+    for name in ("header_polish", "tools_merge", "page_polish"):
+        off = load_config()
+        setattr(off, name, False)
+        assert not best_today_header.enabled(off), name
+
 def test_off_and_missing_change_no_byte(tmp_path, monkeypatch):
     off = files(build(tmp_path, monkeypatch, False, "off"))
     assert files(build(tmp_path, monkeypatch, None, "missing")) == off

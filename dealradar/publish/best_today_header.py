@@ -63,7 +63,11 @@ SCRIPT = '''<script>
 
 
 def enabled(cfg):
-    return getattr(cfg, 'best_today_header', False) is True
+    # The copy needs the home passes it copies: header_polish puts the tabs inside <header>,
+    # tools_merge names the tool links, page_polish handles /?analyze= (Codex review 10-24).
+    # Without any of them the page keeps its own header instead of failing or misrouting.
+    return getattr(cfg, 'best_today_header', False) is True and all(
+        getattr(cfg, name, False) is True for name in ('header_polish', 'tools_merge', 'page_polish'))
 
 
 def _end(text, i):
