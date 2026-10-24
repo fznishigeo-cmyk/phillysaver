@@ -414,13 +414,14 @@ def compute_savings(d: models.ExtractedDeal, *, allow_price_only: bool = False,
         elif step["kind"] == "deferred" and "deferred_value" not in flags:
             flags.append("deferred_value")
 
-    # A stated final (including a range upper bound) is never discounted twice,
-    # but it must still establish eligibility for a minimum-spend offer.
+    # A stated final (including a range upper bound) is never discounted twice, and
+    # it is the price AFTER the coupon: eligibility for a minimum-spend coupon comes
+    # from the regular price run through the steps before it. Without a regular
+    # price there is nothing to check against, so the stated final stands.
     stated = d.price_upper_bound if d.price_is_range else d.final_price
-    if stated is not None or not d.regular_price or d.deal_type:
-        base = stated if stated is not None else (d.regular_price if d.deal_type else None)
-        if any(_below_minimum_spend(step, base) for step in checkout_steps):
-            return models.SavingsResult(computable=False, exclude_reason="minimum_spend")
+    if (stated is not None or d.deal_type) and d.regular_price \
+            and _misses_minimum_spend(d.regular_price, checkout_steps):
+        return models.SavingsResult(computable=False, exclude_reason="minimum_spend")
 
     # ---- Rules 7/8: deal-type driven math ----
     if d.deal_type in ("free_after_rebate", "moneymaker"):
@@ -468,6 +469,24 @@ def _parse_rebate(s: str, *, accuracy_lite: bool = False) -> dict:
 def _below_minimum_spend(step: dict, price: float | None) -> bool:
     minimum = step.get("minimum_spend")
     return minimum is not None and (price is None or round(price, 2) < round(minimum, 2))
+
+
+def _misses_minimum_spend(start: float, checkout_steps: list[dict]) -> bool:
+    """True when a minimum-spend step is not reached by the running price before it."""
+    running = start
+    for step in checkout_steps:
+        if _below_minimum_spend(step, running):
+            return True
+        v = step["value"]
+        if v is None:
+            continue
+        if step["kind"] == "sale_price":
+            running = v
+        elif step["kind"] == "abs_off":
+            running -= v
+        else:  # pct_off multiplies the RUNNING total
+            running *= 1.0 - v / 100.0
+    return False
 
 
 def _shipping_add(final: float, cost: float | None, threshold: float | None,

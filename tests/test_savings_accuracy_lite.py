@@ -95,9 +95,11 @@ def test_s2_commas_in_amounts_and_punctuation(wording, discount, minimum):
         "kind": "abs_off", "value": discount, "minimum_spend": minimum}
 
 
-@pytest.mark.parametrize("price", [None, 24.99, 25, 30])
+@pytest.mark.parametrize("price", [None, 22, 24.99, 25, 30])
 @pytest.mark.parametrize("is_range", [False, True])
 def test_s2_stated_price_and_evidenced_range_preserve_price(price, is_range):
+    # The stated final is the price AFTER the coupon; the regular price ($100)
+    # reaches the $25 minimum, so a stated $22 or $24.99 stands.
     kwargs = {"regular_price": 100, "stack_steps": ["$5 off $25"]}
     if is_range:
         kwargs.update(price_is_range=True, price_upper_bound=price,
@@ -107,21 +109,36 @@ def test_s2_stated_price_and_evidenced_range_preserve_price(price, is_range):
     result = compute_savings(deal(**kwargs), accuracy_lite=True)
     if is_range and price is None:
         assert not result.computable and result.exclude_reason == "range_no_upper"
-    elif price is not None and price < 25:
-        assert not result.computable and result.exclude_reason == "minimum_spend"
-        assert result.final_price is None
     else:
         assert result.computable
         assert result.final_price == (95 if price is None else price)
         assert result.flags == (["range"] if is_range else [])
 
 
-@pytest.mark.parametrize("kwargs", [{}, {"pct_off": 50}, {"deal_type": "bogo"}])
-def test_s2_minimum_without_price_cannot_establish_eligibility(kwargs):
-    result = compute_savings(deal(stack_steps=["$5 off $25"], **kwargs),
+@pytest.mark.parametrize(("regular", "final", "steps", "expected"), [
+    (27, 22, ["$5 off $25"], 22),                       # $27 reaches $25, $22 after the coupon
+    (27, 22, ["$5 off orders of $25+"], 22),
+    (50, 8, ["80% off", "$2 off $10 order"], 8),        # running $10.00 reaches $10
+    (10, 5, ["$5 off $25"], None),                      # a $10 item never reaches $25
+    (100, 15, ["sale price $20", "$5 off $25"], None),  # running $20 before the coupon
+])
+def test_s2_stated_final_eligibility_comes_from_the_regular_price(regular, final, steps, expected):
+    result = compute_savings(deal(regular_price=regular, final_price=final, stack_steps=steps),
                              accuracy_lite=True)
-    assert not result.computable and result.exclude_reason == "minimum_spend"
-    assert result.final_price is None
+    if expected is None:
+        assert not result.computable and result.exclude_reason == "minimum_spend"
+    else:
+        assert result.computable and result.final_price == expected
+
+
+@pytest.mark.parametrize("kwargs", [{}, {"pct_off": 50}, {"deal_type": "bogo"},
+                                    {"final_price": 22, "pct_off": 20}])
+def test_s2_minimum_without_regular_price_keeps_todays_result(kwargs):
+    # No regular price: nothing to check eligibility against and no coupon
+    # arithmetic happens, so the switch changes nothing.
+    on = compute_savings(deal(stack_steps=["$5 off $25"], **kwargs), accuracy_lite=True)
+    off = compute_savings(deal(stack_steps=["$5 off $25"], **kwargs))
+    assert astuple(on) == astuple(off)
 
 
 def test_s2_minimum_uses_running_total_in_stated_order():

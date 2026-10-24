@@ -138,7 +138,9 @@ dollars, "save $2", or a stated percentage still apply. Minimum-spend coupons
 ("$5 off $25", "Save $10 on $50+", "minimum purchase $50") require the
 cents-rounded running price to reach that threshold at that step; otherwise
 exclude with `minimum_spend`, with no guessed price. A stated final or evidenced
-range upper bound supplies the eligibility price and is never discounted again.
+range upper bound is the price after the coupon and is never discounted again;
+its eligibility comes from the regular price run through the steps before the
+coupon, and without a regular price the stated final stands unchanged.
 Commas inside thousands and punctuation after amounts stay distinct. Kohl's
 Cash, gift cards, rewards and store credit in `rebates` are deferred value,
 excluded from both percentages. "Free 2-day shipping" and "FREE One-Day
