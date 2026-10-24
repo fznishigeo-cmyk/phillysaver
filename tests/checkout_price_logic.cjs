@@ -21,7 +21,9 @@ vm.runInContext(fragment('  function checkoutPriceHtml(d)', '  var TICKER_MAX'),
 const d = doc.deals[0];
 const live = ctx.cardHtml(d), expected = ctx.esc(process.argv[3]);
 assert(live.includes(expected));
-assert(live.indexOf(expected) < live.indexOf('How to get this price:'));
+// Before the how-to: the How box, or short_cards' steps and "Enter Code" lines.
+const howTo = ['How to get this price:', 'class="how-line"', 'class="code-line"'].map(s => live.indexOf(s)).filter(i => i >= 0);
+assert(howTo.length && live.indexOf(expected) < Math.min(...howTo));
 assert(live.includes('>Get deal</a>') && live.includes('price checked '));
 assert(!ctx.cardHtml({...d, checkout_price:null}).includes('Amazon shows'));
 assert(!ctx.cardHtml({...d, status:'dead'}).includes('Amazon shows'));

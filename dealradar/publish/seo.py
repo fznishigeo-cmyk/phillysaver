@@ -265,6 +265,8 @@ def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
                  f'<span class="pcl">price checked </span>{hidden}{age} ago</span>')
     if d.get("select_sizes") and fresh_config is not None:
         meta += '<span class="chip">select sizes</span>'
+    if short:
+        meta += short_cards.ends_html(d)
     countdown = spotlight_time(spotlight.get("ends_at", ""), now or datetime.now(timezone.utc))
     if countdown:
         meta += (f'<span class="chip spotlight-time" data-ends-at="{e(spotlight["ends_at"])}">'
