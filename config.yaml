@@ -1545,11 +1545,11 @@ state:
   # of truth. false = no copies. r2_keep = timestamped copies kept (+ latest.enc).
   r2_copy: true
   r2_keep: 24
-  # R2 primary (phase 2; on only after the r2-drill passes): every save uploads to R2
+  # R2 primary (phase 2; on since 2026-10-24 after r2 drill #2): every save uploads to R2
   # FIRST and refuses without it; at/above max_enc_mb the data branch gets only the
   # pointer state.r2.json and restore_state.sh downloads exactly that object (bytes +
   # sha256 checked) or refuses to start. Strict boolean.
-  r2_primary: false
+  r2_primary: true
 
 retention:
   state_retention_337: true  # OFF preserves previous maintenance/writer bytes.
