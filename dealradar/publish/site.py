@@ -54,7 +54,7 @@ from . import tool_pages_1020
 from . import join_dialog
 from . import search_polish_1019
 from . import search_buttons_1019, search_discounts_button, card_click_1020, buttons_to_tools, amazon_price_cap, tools_new_tab, tool_buttons_outside, search_focus_ring, hide_timer_ticker
-from . import phone_tagline_count, timer_center, sticky_buy_bar, soft_buttons, tools_merge
+from . import phone_tagline_count, timer_center, sticky_buy_bar, soft_buttons, tools_merge, hot_find
 from . import timer_pill_ring
 from . import phone_timer_raise
 from . import search_circle
@@ -1240,6 +1240,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     site_version = sticky_buy_bar.site_version(site_version, cfg)
     site_version = front_mix.site_version(site_version, cfg)
     site_version = soft_buttons.site_version(site_version, cfg)
+    site_version = hot_find.site_version(site_version, cfg)
     site_version = tools_merge.site_version(site_version, cfg)
     site_version = shipping_note.site_version(site_version, cfg)
     site_version = best_today_tab.site_version(site_version, cfg)
@@ -1545,6 +1546,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     hide_timer_ticker.publish(out, cfg)
     sticky_buy_bar.publish(out, cfg)
     soft_buttons.publish(out, cfg)
+    hot_find.publish(out, cfg)
     phone_first_screen.publish(out, cfg)
     tools_merge.publish(out, cfg)
     best_today_tab.publish(out, cfg)

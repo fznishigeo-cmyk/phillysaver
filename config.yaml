@@ -325,6 +325,7 @@ store_policy:
 
 publish:
   amazon_reference: list_price  # history | list_price; comparisons stay private
+  price_drop_label: "Hot Find"  # operator 2026-10-24: "I don't like the word Price drop ... it looks kind of spamy" -> "go with Hot Find........ push it through" (flag/chip on Amazon deals without a List Price; no comparison claimed)
   min_pct: 40                  # floor: pct_at_checkout (alerts + headline tier).
                                # Verification thresholds (history-checked, the
                                # Keepa cross-check) derive from this one knob.

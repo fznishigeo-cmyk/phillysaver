@@ -372,6 +372,7 @@ class AppConfig:
     amazon_as_of_enabled: bool = False
     amazon_history: str = "show"
     amazon_reference: str = "history"
+    price_drop_label: str = "Price drop"
     amazon_watches: str = ""  # "" follows amazon_history; on | off
     store_policy: dict = field(default_factory=lambda: validated_store_policy({}))
     offscreen_cards: bool = False
@@ -1190,6 +1191,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.amazon_reference = g("publish", "amazon_reference", default="history")
     if cfg.amazon_reference not in ("history", "list_price"):
         raise ValueError("publish.amazon_reference must be history or list_price")
+    cfg.price_drop_label = g("publish", "price_drop_label", default=cfg.price_drop_label)
+    if not isinstance(cfg.price_drop_label, str) or not cfg.price_drop_label.strip() or len(cfg.price_drop_label) > 20:
+        raise ValueError("publish.price_drop_label must be a short text")
     if cfg.amazon_history not in {"show", "hide"}:
         raise ValueError("amazon_history must be show or hide")
     watches = g("amazon_watches", default="")
