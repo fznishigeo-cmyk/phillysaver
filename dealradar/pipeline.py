@@ -2981,6 +2981,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         log.info("amazon used: %s", summary["amazon_used"])
         summary["published"] = site_res.get("published", 0)
         summary["unpublished_photoless"] = site_res["unpublished_photoless"]
+        summary["unpublished_linkless"] = site_res["unpublished_linkless"]
         summary["hidden_deal_site_links"] = site_res["hidden_deal_site_links"]
         summary["hidden_deal_site_links_by_credit"] = site_res["hidden_deal_site_links_by_credit"]
         summary["appeal"] = site_res.get("appeal", {})

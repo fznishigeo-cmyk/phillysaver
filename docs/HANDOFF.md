@@ -244,6 +244,21 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Get deal is always a clean HTTPS URL (branch `deal-https` from `ed835b7`, 2026-10-24;
+  committed, not pushed):** visitor watch #258 (live d959ee1, phone and desktop) flagged
+  "LEGO Creator 3-in-1 Retro Telephone 31174 Building Kit: invalid HTTPS URL". Cause: an
+  http:// store link (as posted, or where redirect resolution stopped: robots, error, 60 s
+  budget, email posts, tracker repair) was published verbatim, and `rewrite_affiliate`
+  skips non-https links (no Amazon tag, no eBay EPN). Port/credential/relative/other-scheme
+  links and linkless live deals were published too. Now `link_facts.https_url` normalises
+  once in `derive_link_facts` (before tagging, and the final Get deal): http:// and `//`
+  open as https, spaces are encoded; an unusable link is no link (the ASIN / credited-post
+  routes, then hidden). `render_site` drops a live deal left without a Get deal
+  (`unpublished_linkless` in the run summary). Stored rows unchanged. Tests:
+  test_publish_link_facts (fixture: the three http target rows), test_hide_deal_site_links,
+  test_code_deals (http Walmart now earns like https), test_visitor_watch (watch check on
+  real serializer and rendered cards). Telegram channel
+  links (`telegram_pub`, untagged) still use the raw canonical URL.
 - **Hourly Keepa overflow (dad61e5, 2026-10-23; ships with relR):**
   Hourly #352 admitted only 10 Buy Box candidates despite a 350-token surplus:
   ordinary cadence excluded other top deals before the surplus queue. New

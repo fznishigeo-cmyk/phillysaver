@@ -255,6 +255,63 @@ readConfig('config.yaml').then(config => {
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+# Watch #258 (2026-10-24, live d959ee1) flagged "LEGO Creator 3-in-1 Retro Telephone
+# 31174 Building Kit: invalid HTTPS URL": store links as posted or redirected.
+UNCLEAN_LINKS = [
+    ('http://www.lego.com/en-us/product/retro-telephone-31174',
+     'https://www.lego.com/en-us/product/retro-telephone-31174'),
+    ('//www.target.com/p/retro-telephone/-/A-87654321', 'https://www.target.com/p/retro-telephone/-/A-87654321'),
+    (' https://www.walmart.com/ip/Retro Telephone/123 ', 'https://www.walmart.com/ip/Retro%20Telephone/123'),
+    ('http://www.amazon.com/s?k=lego+31174&tag=source-20', 'https://www.amazon.com/s?k=lego+31174&tag=wowpriced-20'),
+    ('https://www.walmart.com:8443/ip/123', ''),
+    ('https://deals:secret@www.walmart.com/ip/123', ''),
+    ('/ip/123', ''),
+    ('javascript:alert(1)', ''),
+]
+CARD_CHECK = '''
+const assert = require('node:assert/strict');
+const {rulesFromConfig, dealLinkProblem} = require('./scripts/visitor_watch_logic.cjs');
+const {readConfig} = require('./scripts/visitor_watch.js');
+const rows = JSON.parse(process.argv[1]);
+readConfig('config.yaml').then(config => {
+  const rules = rulesFromConfig(config);
+  // What the card renders: Get deal for a live row with a url, none for an ended one.
+  for (const row of rows) assert.equal(dealLinkProblem({store: row.store, ended: row.status === 'dead',
+    href: row.status === 'dead' ? '' : row.url}, rules), '', row.item + ' ' + row.url);
+}).catch(error => {console.error(error); process.exitCode = 1;});
+'''
+
+
+def test_real_serializer_get_deal_is_clean_https_or_absent():
+    public = [site._serialize_deal(make_deal(canonical_url=posted, codes=[], sightings=[]), NOW, 'wowpriced-20')
+              for posted, _ in UNCLEAN_LINKS]
+    assert [row['url'] for row in public] == [clean for _, clean in UNCLEAN_LINKS]
+    result = node(['-e', CARD_CHECK, json.dumps([row for row in public if row['url']])])
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_rendered_cards_pass_the_get_deal_check(tmp_path, monkeypatch):
+    monkeypatch.setattr(site, 'util_now', lambda: NOW)
+    cfg = AppConfig(support_enabled=True, affiliate_amazon_tag='wowpriced-20', hide_deal_site_links=True,
+                    affiliate_repair_competitor_trackers=True)
+    # Unusable links: with a credited post that route is hidden; with none the deal is linkless.
+    keepa_only = {'sightings': [{'source_name': 'keepa', 'source_url': ''}]}
+    rows = [make_deal(dedupe_key=f'unclean-{i}', item=f'LEGO Creator Retro Telephone {i}', codes=[],
+                      conditions=[], category='beauty' if i % 2 else 'kitchen',
+                      canonical_url=UNCLEAN_LINKS[i % len(UNCLEAN_LINKS)][0],
+                      image_url=f'https://images.example.invalid/photo-{i}.png', **(keepa_only if i % 3 else {}))
+            for i in range(32)]
+    rows[-1].update(status='dead', death='confirmed', died_at=iso(NOW - timedelta(minutes=5)))
+    out, doc, *_ = render(tmp_path, cfg, rows)
+    published = {row['dedupe_key']: row['url'] for row in doc['deals']
+                 if row.get('status') != 'dead' and not row.get('locked')}
+    expected = {f'unclean-{i}': UNCLEAN_LINKS[i % len(UNCLEAN_LINKS)][1] for i in range(31)}
+    assert published and all(url == expected[key] for key, url in published.items())
+    assert {key for key, url in expected.items() if not url}.isdisjoint(published)
+    result = node(['-e', CARD_CHECK, json.dumps(doc['deals'])])
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_watch_reads_the_live_used_tab_only_switch():
     result = node(['-e', """
 const {readConfig} = require('./scripts/visitor_watch.js');

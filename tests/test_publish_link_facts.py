@@ -178,8 +178,9 @@ EBAY = ("https://ebay.com/itm/9?var=55&mkcid=1&mkrid=711-53200-19255-0&siteid=0"
     ({}, {}, DIRECT, False),
     ({"canonical_url": ""}, {}, POST, False),
     ({"canonical_url": "", "sightings": []}, {}, "", False),
+    # Visitor watch #258: an unusable link is no Get deal (render drops the live card).
     ({"canonical_url": "", "sightings": [{"source_name": "old", "source_url": "relative"}]},
-     {}, "relative", False),
+     {}, "", False),
     ({"codes": ["SAVE10"]}, {}, POST, False),
     ({"codes": ["SAVE10"]}, {"overrides": {"walmart.com/12345": "https://sovrn.co/ours"}},
      "https://sovrn.co/ours", True),
@@ -199,9 +200,16 @@ EBAY = ("https://ebay.com/itm/9?var=55&mkcid=1&mkrid=711-53200-19255-0&siteid=0"
           "overrides": {"walmart.com/12345": "https://sovrn.co/override"}}, "https://sovrn.co/override", True),
     ({"canonical_url": "https://ebay.com/itm/9?var=55&campid=1111111111"},
      {"ebay_campid": CAMP}, EBAY, True),
-    ({"canonical_url": "/relative"}, {}, "/relative", False),
-    ({"canonical_url": "https://[invalid"}, {}, "https://[invalid", False),
-    ({"canonical_url": "http://walmart.com/ip/12345"}, {}, "http://walmart.com/ip/12345", False),
+    # An unusable store link takes the linkless route; http:// opens as https.
+    ({"canonical_url": "/relative"}, {}, POST, False),
+    ({"canonical_url": "https://[invalid"}, {}, POST, False),
+    ({"canonical_url": "http://walmart.com/ip/12345"}, {}, DIRECT, False),
+    ({"canonical_url": "https://user:pw@walmart.com/ip/12345"}, {}, POST, False),
+    ({"canonical_url": "https://walmart.com:8443/ip/12345"}, {}, POST, False),
+    ({"canonical_url": " //walmart.com/ip/12345 "}, {}, DIRECT, False),
+    ({"canonical_url": "https://walmart.com/ip/lego set 12345"}, {}, "https://walmart.com/ip/lego%20set%2012345", False),
+    ({"canonical_url": "http://www.amazon.com/s?k=lego+31174&tag=theirs-20"}, {},
+     "https://www.amazon.com/s?k=lego+31174&tag=" + TAG, True),
 ])
 def test_independent_final_routes(changes, options, url, earns):
     row = make_deal(**{"codes": [], "conditions": [], "canonical_url": DIRECT, **changes})
@@ -419,7 +427,8 @@ def test_render_reuses_only_link_facts_and_keeps_both_score_passes(tmp_path, mon
         result = site.render_site(db, cfg, NOW, out_dir=tmp_path / "site", deals=rows)
         assert len(projections) == len(rows)
         assert passes == [False] * len(rows) + [True] * len(rows)
-        assert len(calls) == (len(rows) if enabled else 7)
+        # Off: 7 legacy derivations plus the live-card link gate's one per deal.
+        assert len(calls) == (len(rows) if enabled else 11)
         assert set(calls) == {d["dedupe_key"] for d in rows}
         assert not any(k.startswith("link_") or k in {"simple_code", "source_names"}
                        for row in result["full_payload"]["deals"] for k in row)
