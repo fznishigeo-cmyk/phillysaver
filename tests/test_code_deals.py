@@ -56,10 +56,17 @@ def test_simple_amazon_code_keeps_tag_even_without_sovrn(enabled, key):
 @pytest.mark.parametrize("url", [
     "https://www.amazon.co.uk/dp/B012345678", "https://a.co/short",
     "https://hip2save.com/product", "https://slickdeals.net/product",
-    "http://www.walmart.com/ip/12345", "",
+    "https://www.walmart.com:8443/ip/12345", "",
 ])
 def test_simple_code_without_earning_store_link_keeps_post(url):
     assert publish(make_deal(canonical_url=url))["url"] == POST
+
+
+def test_http_store_link_opens_as_https_and_earns_like_https():
+    # Visitor watch #258: http:// was published as is, so it never earned either.
+    http = publish(make_deal(canonical_url="http://www.walmart.com/ip/12345"))
+    assert http == publish(make_deal(canonical_url="https://www.walmart.com/ip/12345"))
+    assert urlsplit(http["url"]).hostname == "redirect.viglink.com" and http["earns"]
 
 
 @pytest.mark.parametrize("enabled,key", [(False, KEY), (True, ""), (True, "bad")])

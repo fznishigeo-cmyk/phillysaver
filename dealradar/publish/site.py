@@ -877,8 +877,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             if deal.get("status", "alive") != "alive":
                 return True
             links = facts_for(deal, required=True)
-            credit_urls = {s.get("source_url") for s in deal.get("sightings") or []}
-            credit_urls.update(url for _, url in links.credits)
+            # links.url is https_url-normalised: compare the credits the same way.
+            credit_urls = {link_facts.https_url(s.get("source_url")) for s in deal.get("sightings") or []}
+            credit_urls.update(link_facts.https_url(url) for _, url in links.credits)
             try:
                 host = (urlsplit(links.url).hostname or "").lower()
             except ValueError:
@@ -897,6 +898,23 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                                     for name, _ in links.credits).most_common(10))
     if cfg.hide_deal_site_links is True:
         logger.info("hidden_deal_site_links: %d; by credit: %s", len(hidden_links), hidden_by_credit)
+
+    def has_link(deal):
+        # A live card always has a Get deal that opens (visitor watch #258);
+        # only ended cards are linkless by design.
+        return deal.get("status", "alive") != "alive" or bool(facts_for(deal, required=True).url)
+
+    linkless = {d["dedupe_key"] for d in visible if not has_link(d)}
+    spotlight_linked = [d for d in spotlight_rows if has_link(d)]
+    if len(spotlight_linked) < len(spotlight_rows):
+        # Count only spotlight cards that would have shown, as hidden_deal_site_links does.
+        linkless |= {d["dedupe_key"] for d in daily_spotlight(spotlight_rows, cfg, now) if not has_link(d)}
+    unpublished_linkless = len(linkless)
+    if unpublished_linkless:
+        logger.info("unpublished_linkless: %d live deal(s) without a usable https Get deal link",
+                    unpublished_linkless)
+    visible = [d for d in visible if has_link(d)]
+    spotlight_rows = spotlight_linked
     deals = visible
     timed("rank")
     serialized = [_serialize_deal(d, now, amazon_tag, overrides, links=facts_for(d), **link_options) for d in deals
@@ -1634,6 +1652,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     result = {"published": len(serialized) + len(spotlight_only), "out_dir": str(out),
             **offsite,
             "unpublished_photoless": unpublished_photoless,
+            "unpublished_linkless": unpublished_linkless,
             "hidden_deal_site_links": len(hidden_links),
             "hidden_deal_site_links_by_credit": hidden_by_credit,
             **({"amazon_reference": {"list_price": sum(d.get("regular_price_basis") == "List price" for d in teaser if not d.get("locked")),

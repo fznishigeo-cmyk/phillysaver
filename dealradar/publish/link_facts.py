@@ -77,6 +77,47 @@ _AFFILIATE_PARAMS = {
 }
 
 
+#: A DNS host name: no IP literal, no single-label host such as localhost.
+_HOST_NAME = re.compile(r"(?:[a-z0-9_](?:[a-z0-9_-]*[a-z0-9_])?\.)+[a-z][a-z0-9-]*\.?")
+#: What a browser percent-encodes in a link anyway.
+_UNSAFE_URL_CHAR = re.compile(r'[\x00-\x20\x7f"<>`]|[^\x00-\x7f]')
+
+
+def https_url(url: str) -> str:
+    """``url`` as a clean https link a visitor can open, or '' when it is none.
+
+    The one normalisation of an outbound link (visitor watch #258: a live Get
+    deal was no clean HTTPS URL). Surrounding whitespace goes; an http:// or
+    scheme-relative link is upgraded to https (stores serve HTTPS; host, path
+    and query stay as they are); spaces and other unsafe characters are
+    percent-encoded; a Unicode host is written in its IDNA (xn--) form.
+    Credentials, a non-default port, a relative path, an IP or single-label
+    host and any other scheme are no store link: the deal is linkless. A
+    clean https link comes back unchanged.
+    """
+    # Control bytes and spaces around the link go first, as urlsplit drops
+    # them too: the suffix below is sliced from this exact string.
+    url = re.sub(r"^[\x00-\x20\s]+|[\x00-\x20\s]+$", "", re.sub(r"[\t\n\r]", "", str(url or "")))
+    if url.startswith("//"):
+        url = "https:" + url
+    try:
+        parts = urlsplit(url)
+        scheme = parts.scheme.lower()
+        host, _, port = parts.netloc.partition(":")
+        hostname = parts.hostname or ""
+        if not hostname.isascii():
+            host = hostname = hostname.encode("idna").decode("ascii")
+        if scheme not in ("http", "https") or "@" in parts.netloc \
+                or port not in ("", "443" if scheme == "https" else "80") \
+                or not _HOST_NAME.fullmatch(hostname) \
+                or not url[len(scheme):].startswith("://" + parts.netloc):
+            return ""
+        rest = url[len(scheme) + 3 + len(parts.netloc):]
+        return "https://" + host + _UNSAFE_URL_CHAR.sub(lambda m: quote(m[0], safe=""), rest)
+    except ValueError:
+        return ""
+
+
 def is_competitor_tracker_host(host: str, hosts: list[str] | tuple[str, ...]) -> bool:
     host = host.lower().removeprefix("www.")
     return any(host == h or host.endswith("." + h) for h in hosts)
@@ -172,7 +213,7 @@ def _link_destination(deal: dict[str, Any], amazon_tag: str,
         bucket = "amazon_tagged" if ours else "amazon_untagged"
     elif host in {"amzn.to", "a.co", "link.amazon"}:
         bucket = "amazon_short"
-    elif any(url == c.get("url") for c in deal.get("credits") or []):
+    elif any(url == https_url(c.get("url")) for c in deal.get("credits") or []):
         bucket = "source_post"
     elif host in _SOVRN_HOSTS:
         bucket = "sovrn"
@@ -293,9 +334,12 @@ def derive_link_facts(deal: dict[str, Any], policy: LinkPolicy) -> LinkFacts:
     protected = bool(protected_link) and not policy.repair_competitor_trackers
     if protected:
         canon = protected_link
+    else:
+        # Before tagging: an http store link opens as https; an unusable one is no link.
+        canon = https_url(canon)
     if policy.repair_competitor_trackers:
         # Operator 2026-10-20: an Amazon item never opens the source's own post.
-        source_urls = {s.get("source_url") for s in deal.get("sightings") or []}
+        source_urls = {https_url(s.get("source_url")) for s in deal.get("sightings") or []}
         source_link = canon in source_urls or is_competitor_tracker_host(
             host_of(canon), tuple(policy.source_hosts) + policy.competitor_tracker_hosts)
         asin = str(deal.get("asin") or "").upper()
@@ -303,8 +347,7 @@ def derive_link_facts(deal: dict[str, Any], policy: LinkPolicy) -> LinkFacts:
             canon = f"https://www.amazon.com/dp/{asin}"
     if policy.exact_variant_links and not protected:
         canon = exact_variant(canon, deal)
-    post = next((c["url"] for c in credits
-                 if str(c["url"]).startswith(("https://", "http://"))), "")
+    post = next((u for c in credits if (u := https_url(c["url"]))), "")
     steps = _needs_steps(deal)
     simple = _simple_code_deal(deal)
     key = hashlib.sha256(str(deal.get("dedupe_key", "")).encode("utf-8")).hexdigest()[:16]
@@ -332,6 +375,7 @@ def derive_link_facts(deal: dict[str, Any], policy: LinkPolicy) -> LinkFacts:
         store_link if canon else (credits[0]["url"] if credits else "")
     if protected:
         url = canon
+    url = https_url(url)
     earns = earning_link({"url": url, "credits": credits}, policy.amazon_tag,
                          competitor_tracker_hosts=policy.competitor_tracker_hosts,
                          ebay_campid=policy.ebay_campid)

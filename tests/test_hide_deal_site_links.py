@@ -126,6 +126,34 @@ def test_any_credit_url_including_deduplicated_credit_is_a_source_post(db, cfg):
     assert result['public_deals'] == []
 
 
+def test_http_credited_post_opens_as_https_and_is_still_a_source_post(db, cfg):
+    # Visitor watch #258: Get deal opens as https; the stored credit stays http.
+    post = 'http://independent.example/post'
+    row = make_deal(canonical_url='', codes=[], image_url=PIC, sightings=[
+        {'source_name': 'Independent', 'source_url': post}])
+    for enabled in (False, True):
+        cfg.hide_deal_site_links = enabled
+        result = site.render_site(db, cfg, NOW, deals=[row])
+        assert [d['url'] for d in result['public_deals']] == ([] if enabled else ['https://independent.example/post'])
+        assert result['hidden_deal_site_links'] == int(enabled)
+
+
+@pytest.mark.parametrize('canon', ['', '/ip/123', 'https://user:pw@www.walmart.com/ip/123',
+                                  'https://www.walmart.com:8443/ip/123', 'javascript:alert(1)'])
+def test_live_deal_without_a_usable_link_is_not_published(db, cfg, canon):
+    # Visitor watch #258: a live card never shows without a Get deal that opens.
+    live = make_deal(dedupe_key='live', canonical_url=canon, codes=[], image_url=PIC,
+                     sightings=[{'source_name': 'keepa', 'source_url': ''}])
+    gone = dict(live, dedupe_key='gone', item='LEGO Ended Set', status='dead', death='confirmed',
+                died_at=iso(NOW))
+    for enabled in (False, True):
+        cfg.hide_deal_site_links = enabled
+        result = site.render_site(db, cfg, NOW, deals=[live, gone])
+        assert [d['dedupe_key'] for d in result['public_deals']] == ['gone']
+        assert result['unpublished_linkless'] == 1 and result['hidden_deal_site_links'] == 0
+        assert not _page(Path(cfg.site_dir), _path(live)).exists()
+
+
 def test_filter_uses_final_route_after_checkout_fallback_and_override(db, cfg):
     cfg.hide_deal_site_links = cfg.affiliate_repair_competitor_trackers = True
     cfg.affiliate_amazon_tag = TAG
@@ -164,6 +192,18 @@ def test_price_only_spotlight_uses_the_same_filter(db, cfg):
     assert not result['public_deals']
     assert not result['full_payload'].get('spotlight')
     assert row['item'] not in (Path(cfg.site_dir) / 'index.html').read_text()
+
+
+def test_linkless_price_only_spotlight_is_counted(db, cfg):
+    # Review of eab121d: a spotlight card dropped for want of a link counts too.
+    cfg.front_page = load_config().front_page
+    row = daily_deal(codes=[], pct_at_checkout=None, regular_price=None, abs_savings=None, image_url=PIC)
+    result = site.render_site(db, cfg, NOW, deals=[row])
+    assert len(result['full_payload']['spotlight']) == 1 and result['unpublished_linkless'] == 0
+    row = dict(row, canonical_url='/broken', sightings=[dict(row['sightings'][0], source_url='')])
+    result = site.render_site(db, cfg, NOW, deals=[row])
+    assert not result['full_payload'].get('spotlight')
+    assert result['unpublished_linkless'] == 1
 
 
 def test_summary_does_not_count_rows_already_hidden_by_photos(db, cfg):
