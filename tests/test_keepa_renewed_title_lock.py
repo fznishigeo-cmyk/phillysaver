@@ -121,6 +121,7 @@ def test_switch_off_preserves_legacy_title_publication(db):
 
 @pytest.mark.parametrize("price_type", [0, 18])
 def test_focus_new_lanes_reject_renewed_labels(db, monkeypatch, price_type):
+    from tests.test_accuracy_lite_counts import ZERO, recording
     from tests.test_keepa_focus_finder import Keepa, pull, row
 
     cfg = load_config()
@@ -135,7 +136,9 @@ def test_focus_new_lanes_reject_renewed_labels(db, monkeypatch, price_type):
     cfg.keepa_focus_finder.update(enabled=True, max_pages_per_run=2, groups={"gadgets": ["Headphones"]})
     fake = Keepa(rows=lambda sel: [row(title="Headphones (Renewed)", price_type=price_type)]
                  if sel["priceTypes"] == [price_type] else [])
-    posts, adapter, _, _ = pull(db, cfg, fake, monkeypatch)
+    with recording() as counts:
+        posts, adapter, _, _ = pull(db, cfg, fake, monkeypatch)
+    assert counts == ZERO | {"renewed_title_lane": 1}
     assert not posts and adapter.focus_summary["kept"] == 0
     assert adapter.focus_summary["dropped"]["drop"] == 1
 

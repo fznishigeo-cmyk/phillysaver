@@ -244,6 +244,31 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Read-only accuracy-lite observability (worktree `wtObserve`, 2026-10-24):**
+  Resumed and reviewed interrupted commit `4a21226` (`wip/observe-1024`), keeping
+  both implementations. The run summary always includes five integer
+  `accuracy_lite` counters and one INFO line; disabled switches produce zeros.
+  Counts live only in the run context, reset on success/failure, and are never
+  stored on deals or in state. S&S uses the permitted regex/unknown-step count;
+  Woot recheck and intake count their skips separately. Keepa/Woot run on the
+  pipeline thread even under parallel source fetching. The tools live check
+  observes the page's existing ASIN/grade search response and prints only the
+  five requested first-item public price fields, with `none` for missing values.
+  Added an offline regression proving nonzero savings counts leave stored
+  deals and every published file byte identical to recording disabled.
+  Validation: `.venv/bin/python -m pytest -q -n 3
+  tests/test_accuracy_lite_counts.py tests/test_accuracy_lite_pipeline.py
+  tests/test_tools_live_check.py tests/test_savings*.py tests/test_config_accuracy_lite.py
+  tests/test_woot*.py tests/test_keepa*.py tests/test_store_prices.py
+  tests/test_e2e_offline.py tests/test_workflows.py tests/test_pipeline*.py`:
+  **866 passed, 7 failed** (199.76s); all seven failures are existing Stripe
+  workflow fixtures blocked from opening localhost sockets (`PermissionError`).
+  After correcting rebate wording in the new evidence-backed fixture, reran
+  the three accuracy-lite counts/pipeline and tools-live-check test files with
+  `-n 3`: **23 passed** (15.72s), including the new byte comparison.
+  `node --check scripts/tools_live_check.js` and `git diff --check` pass.
+  No live checks or external network calls, new commit, or push. Remaining:
+  review/deployment and the seven workflow tests in a socket-capable environment.
 - **Accuracy-lite (branch `accuracy-lite`, base `4841f40`, 2026-10-24; uncommitted):**
   Three independent strict switches ship true; missing/false keeps the legacy
   path: `savings.accuracy_lite`, `woot.condition_lock`, and

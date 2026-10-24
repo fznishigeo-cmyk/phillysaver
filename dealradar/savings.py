@@ -19,7 +19,7 @@ import statistics
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from . import models
+from . import accuracy_lite_counts, models
 
 logger = logging.getLogger("dealradar.savings")
 
@@ -368,6 +368,14 @@ def known_shipping(deal: dict) -> bool:
 def compute_savings(d: models.ExtractedDeal, *, allow_price_only: bool = False,
                     accuracy_lite: bool = False) -> models.SavingsResult:
     """Turn raw extracted facts into a SavingsResult, per SAVINGS_RULES.md."""
+    result = _compute_savings(d, allow_price_only=allow_price_only, accuracy_lite=accuracy_lite)
+    if accuracy_lite and result.exclude_reason == "minimum_spend":
+        accuracy_lite_counts.increment("minimum_spend")
+    return result
+
+
+def _compute_savings(d: models.ExtractedDeal, *, allow_price_only: bool,
+                     accuracy_lite: bool) -> models.SavingsResult:
     # ---- Rule 1: gates first ----
     if (d.currency or "").strip().upper() != "USD" or (d.region or "").strip().upper() != "US":
         logger.debug("excluded non_us: %s (%s/%s)", d.item, d.currency, d.region)
@@ -401,6 +409,8 @@ def compute_savings(d: models.ExtractedDeal, *, allow_price_only: bool = False,
     rebate_steps: list[dict[str, Any]] = []
     for raw in d.stack_steps:
         step = parse_stack_step(raw, accuracy_lite=accuracy_lite)
+        if accuracy_lite and step["kind"] == "unknown" and _SUBSCRIBE_RE.search((raw or "").lower()):
+            accuracy_lite_counts.increment("subscribe_save_unknown")
         if step["kind"] in _CHECKOUT_KINDS:
             checkout_steps.append(step)
         elif step["kind"] in _REBATE_KINDS:
@@ -409,6 +419,8 @@ def compute_savings(d: models.ExtractedDeal, *, allow_price_only: bool = False,
             flags.append("deferred_value")  # Rule 9: never enters any pct
     for raw in d.rebates:
         step = _parse_rebate(raw, accuracy_lite=accuracy_lite)
+        if accuracy_lite and step["kind"] == "deferred" and _REWARDS_RE.search((raw or "").lower()):
+            accuracy_lite_counts.increment("rewards_deferred")
         if step["kind"] in _REBATE_KINDS:
             rebate_steps.append(step)
         elif step["kind"] == "deferred" and "deferred_value" not in flags:
