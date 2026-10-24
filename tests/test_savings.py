@@ -57,6 +57,61 @@ def test_parse_stack_step_all_kinds():
     assert parse_stack_step("stack with cartwheel maybe") == {"kind": "unknown", "value": None}
 
 
+@pytest.mark.parametrize("step", ["Subscribe & Save $8.49", "Subscribe and Save $8.49"])
+def test_subscribe_save_price_is_not_an_absolute_discount(step):
+    assert parse_stack_step(step)["kind"] != "abs_off"
+    result = compute_savings(deal(regular_price=12.99, stack_steps=[step]))
+    assert not result.computable or result.final_price == approx(8.49)
+
+
+@pytest.mark.parametrize("step", ["$5 off $25", "$5 off orders of $25+"])
+@pytest.mark.parametrize("regular,eligible", [(12.99, False), (24.99, False),
+                                               (25, True), (30, True)])
+def test_coupon_minimum_spend_is_required(step, regular, eligible):
+    result = compute_savings(deal(regular_price=regular, stack_steps=[step]))
+    assert result.computable is eligible
+    if eligible:
+        assert result.final_price == approx(regular - 5)
+
+
+def test_coupon_minimum_spend_uses_the_running_item_price():
+    result = compute_savings(deal(regular_price=50,
+                                 stack_steps=["sale price $20", "$5 off $25"]))
+    assert not result.computable
+
+
+@pytest.mark.parametrize("step", ["Subscribe & Save $2 off", "save $2", "$2 off"])
+def test_explicit_subscription_discount_still_subtracts(step):
+    result = compute_savings(deal(regular_price=12.99, stack_steps=[step]))
+    assert result.final_price == approx(10.99)
+
+
+@pytest.mark.parametrize("reward", ["$10 gift card back", "10% portal cashback",
+                                   "$15 store credit", "$10 gift card rebate"])
+def test_deferred_reward_misfiled_as_rebate_never_changes_savings(reward):
+    result = compute_savings(deal(regular_price=50, final_price=50, rebates=[reward]))
+    assert result.final_price == 50
+    assert result.pct_at_checkout == result.pct_with_rebates == 0
+    assert "deferred_value" in result.flags
+    assert "rebate_dependent" not in result.flags
+
+
+@pytest.mark.parametrize("shipping,cost,threshold", [
+    ("Free 2-day shipping", 0, None),
+    ("Free 2 day shipping", 0, None),
+    ("Free 2 business day shipping", 0, None),
+    ("Free 2–3 day shipping", 0, None),
+    ("Free 2-day shipping over $35", None, 35),
+    ("2-day shipping $6.99", 6.99, None),
+    ("$6.99 2-day shipping or free over $50", 6.99, 50),
+])
+def test_delivery_duration_is_not_a_shipping_charge(shipping, cost, threshold):
+    assert parse_shipping(shipping) == (cost, threshold)
+    result = compute_savings(deal(regular_price=100, final_price=20,
+                                 shipping_cost_or_threshold=shipping))
+    assert result.final_price == approx(20 + (cost or 0))
+
+
 # ---------------------------------------------------------------------------
 # required traps (a)-(r)
 # ---------------------------------------------------------------------------

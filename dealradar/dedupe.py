@@ -3,6 +3,8 @@
 A deal is identified by its dedupe_key:
 - 'url|<canonical_url>' when the pipeline resolved a canonical product URL;
 - 'si|<store>|<normalized item>' otherwise (store + normalized item name).
+  Conflicting quantities under a legacy name key get an identity suffix;
+  existing stored keys stay unchanged.
 
 Merging keeps the latest backed price and its matching checkout facts, and keeps
 the most recently stated expiry. Sightings and price history are anchored on
@@ -35,6 +37,11 @@ def canonical_key(store: str, canonical_url: str, item: str) -> str:
     if canonical_url:
         return "url|" + canonical_url
     return "si|" + store.lower().strip() + "|" + util.normalize_item(item)
+
+
+def _identity_key(key: str, item: str) -> str:
+    """Disambiguate a legacy name-key collision without renaming stored rows."""
+    return key + "|identity|" + " ".join(sorted(util.item_identity(item)))
 
 
 #: With a shared distinctive promo code, two title variants of one deal are
@@ -93,11 +100,18 @@ def find_existing(db, store: str, canonical_url: str, item: str,
     best match at or above the threshold wins). A shared distinctive promo
     code lowers the required similarity to CODE_ASSISTED_RATIO — title
     variants of one deal share the code; different products merely sharing
-    a store-wide code stay apart on the name bar.
+    a store-wide code stay apart on the name bar. Name-based matches also
+    reject conflicting model, quantity and qualifier facts. Expanded titles
+    can also match on the same brand, model and product type.
     """
-    hit = db.get_deal(canonical_key(store, canonical_url, item))
-    if hit is not None:
+    key = canonical_key(store, canonical_url, item)
+    hit = db.get_deal(key)
+    if hit is not None and (canonical_url or not util.item_identity_conflict(item, hit["item"])):
         return hit
+    if hit is not None and not canonical_url:
+        hit = db.get_deal(_identity_key(key, item))
+        if hit is not None and not util.item_identity_conflict(item, hit["item"]):
+            return hit
 
     hit = db.deal_by_canonical_url(canonical_url)
     if hit is not None:
@@ -118,7 +132,11 @@ def find_existing(db, store: str, canonical_url: str, item: str,
         other = link_key(row.get("canonical_url") or "")
         if identity and other and identity != other:
             continue
+        if util.item_identity_conflict(item, row["item"]):
+            continue
         score = fuzz.token_sort_ratio(norm, row["normalized_item"])
+        if util.item_model_match(item, row["item"]):
+            score = 100.0
         bar = (code_cutoff
                if my_codes and (_distinctive_codes(row.get("codes")) & my_codes)
                else cutoff)
@@ -284,6 +302,9 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
     """
     from .http_client import extract_asin
     from .photo_recovery import identity_changes, post_identity
+    from .conditions import USED_CONDITIONS, condition_class
+    from .fetch.woot import _condition_is_explicit
+    from .verify import woot_offer_url
 
     identity = post_identity(extracted, post)
     asin = extract_asin(identity) if identity else asin_from_links(
@@ -306,12 +327,26 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
     existing = find_existing(db, extracted.store, extracted.product_url,
                              extracted.item, cfg.fuzzy_threshold,
                              codes=extracted.codes)
+    condition_known = _condition_is_explicit(post) if post.source_name == "woot" else (
+        condition_class(extracted.conditions) != "new"
+        or any(re.fullmatch(r"(?:brand[\s_-]+)?new", str(c), re.I)
+               for c in extracted.conditions)
+        or bool(re.search(r"(?im)^\s*(?:(?:item\s+)?condition\s*:\s*(?:brand[ -]+)?new"
+                          r"|brand[ -]+new)[.!]?\s*$", post.text)))
+    if (existing is not None and woot_offer_url(existing) and condition_known
+            and condition_class(existing.get("conditions")) != condition_class(extracted.conditions)):
+        # A reused Woot URL with another condition is no reading of this offer.
+        return {"deal_id": int(existing["id"]), "dedupe_key": existing["dedupe_key"],
+                "is_new_deal": False, "price_improved": False, "revived": False,
+                "payload": existing}
 
     price_improved = revived = False
     post_at = post.published_at or post.fetched_at
     if existing is None:
         key = canonical_key(extracted.store, extracted.product_url,
                             extracted.item)
+        if not extracted.product_url and db.get_deal(key) is not None:
+            key = _identity_key(key, extracted.item)
         payload = _new_payload(key, extracted, savings, asin, now)
         payload["online_only_published_at"] = (
             util.iso(post_at) if extracted.online_only in ("true", "false") else "")
@@ -407,8 +442,10 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
                           "deferred_value", "quantity_or_unit"):
                 payload[field] = getattr(extracted, field)
 
-        payload["conditions"] = _union(existing.get("conditions"),
-                                       extracted.conditions)
+        incoming_conditions = extracted.conditions
+        if woot_offer_url(existing) and not condition_known:
+            incoming_conditions = [c for c in incoming_conditions if c not in USED_CONDITIONS]
+        payload["conditions"] = _union(existing.get("conditions"), incoming_conditions)
 
         new_at = util.iso(post_at)
         online_at = (existing.get("online_only_published_at")
@@ -588,6 +625,8 @@ def reprice_existing(db, deal: dict[str, Any], post: models.RawPost,
     from .parse.extractor import verify_evidence
     from .parse.schema import LLMDeal, to_extracted
     from .savings import compute_savings
+    from .conditions import condition_class
+    from .fetch.woot import _condition_is_explicit
     from .verify import _price_hidden_by_promo, is_amazon_deal, is_used_deal, woot_offer_url
     from .store_prices import plain_price, store_offer
 
@@ -602,7 +641,10 @@ def reprice_existing(db, deal: dict[str, Any], post: models.RawPost,
                 and woot_offer_url(current) == woot_offer_url(
                     {"canonical_url": (post.structured or {}).get("product_url")}))
     if woot:
-        if _price_hidden_by_promo(current) or current.get("gone_suspect_at"):
+        if ((_condition_is_explicit(post)
+                and condition_class(current.get("conditions")) != condition_class(
+                    (post.structured or {}).get("conditions")))
+                or _price_hidden_by_promo(current) or current.get("gone_suspect_at")):
             return False
     elif retailer:
         if not plain_price(current) or (store == "bestbuy" and is_used_deal(current)):

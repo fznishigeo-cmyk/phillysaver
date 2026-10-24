@@ -214,10 +214,162 @@ def test_used_offer_keeps_its_condition_and_floor(db, cfg):
     assert rank.site_deals(db, cfg, NOW) == []
 
 
+@pytest.mark.parametrize("condition", ["missing", None, "", "   "])
+@pytest.mark.parametrize("reading", ["ended", "same_price", "lower_price", "range"])
+def test_unknown_feed_condition_keeps_existing_new_offer_checks(db, cfg, condition, reading):
+    before = stored(db, cfg, price=100)
+    initial = counts(db)
+    item = offer(25 if reading == "lower_price" else 100, 150, condition=condition)
+    if condition == "missing":
+        del item["Condition"]
+    if reading == "ended":
+        item["EndDate"] = util.iso(NOW)
+    elif reading == "range":
+        item["SalePrice"] = [90, 110]
+    stats = check(db, cfg, [item])
+    after = db.get_deal(before["dedupe_key"])
+    assert after["conditions"] == before["conditions"] == []
+    if reading == "ended":
+        assert after["status"] == "dead" and after["death"] == "api_ended"
+        assert counts(db) == initial
+    else:
+        assert stats["confirmed"] == 1
+        assert stats["repriced"] == int(reading == "lower_price")
+        assert after["woot_listed_at"] == util.iso(NOW)
+        assert after["final_price"] == (25 if reading == "lower_price" else 100)
+        if reading != "range":
+            assert after["price_rechecked_at"] == util.iso(NOW)
+        assert counts(db) == dict(initial, price_history=initial["price_history"]
+                                 + {"same_price": 1, "lower_price": 2, "range": 0}[reading])
+    check(db, cfg, [item])
+    assert db.get_deal(before["dedupe_key"]) == after
+
+
+@pytest.mark.parametrize("condition", ["missing", None, "", "   "])
+def test_direct_reprice_accepts_unknown_feed_condition(db, cfg, condition):
+    before = stored(db, cfg, price=100)
+    item = offer(25, 100, condition=condition)
+    if condition == "missing":
+        del item["Condition"]
+    post = woot.WootAdapter._map_item(item, SRC, NOW)
+    assert dedupe.reprice_existing(db, before, post, cfg, NOW)
+    after = db.get_deal(before["dedupe_key"])
+    assert after["final_price"] == 25 and after["conditions"] == []
+
+
+@pytest.mark.parametrize("condition", ["missing", None, "", "   "])
+@pytest.mark.parametrize("structured", [True, False])
+def test_unknown_condition_intake_preserves_stored_new_condition(db, cfg, condition, structured):
+    before = stored(db, cfg, price=100)
+    item = offer(25, 100, condition=condition, StartDate=util.iso(NOW),
+                 Url=before["canonical_url"], Title=before["item"])
+    if condition == "missing":
+        del item["Condition"]
+    post = woot.WootAdapter._map_item(item, SRC, NOW)
+    ext = to_extracted(LLMDeal.model_validate(post.structured), post, "UTC", NOW)
+    # Unknown condition remains conservative for discovery, but does not
+    # claim this existing offer changed from new to used.
+    assert ext.conditions == ["used"]
+    if not structured:
+        # Offers without a plain list price use the ordinary extraction path.
+        post.structured = None
+        ext.conditions.append("prime_only")
+    dedupe.upsert_extracted(db, ext, savings.compute_savings(ext), post, cfg, NOW)
+    after = db.get_deal(before["dedupe_key"])
+    assert after["final_price"] == 25
+    assert after["conditions"] == ([] if structured else ["prime_only"])
+    initial = counts(db)
+    dedupe.upsert_extracted(db, ext, savings.compute_savings(ext), post, cfg, NOW)
+    assert counts(db) == initial and db.get_deal(before["dedupe_key"]) == after
+
+
+@pytest.mark.parametrize("conditions,condition", [
+    ([], "Refurbished"), ([], "New - Open Box"), ([], "Used - Like New"),
+    (["used"], "New"), (["refurbished"], "New"), (["open_box"], "New"),
+    (["refurbished"], "Used - Grade B"), (["open_box"], "Refurbished"),
+])
+@pytest.mark.parametrize("sale,ended", [(25, False), (100, False), (25, True)])
+def test_condition_change_never_reprices_confirms_or_records_history(db, cfg, conditions, condition, sale, ended):
+    before = stored(db, cfg, price=100, conditions=conditions)
+    initial = counts(db)
+    item = offer(sale, 100, condition=condition)
+    if ended:
+        item["EndDate"] = util.iso(NOW)
+    stats = check(db, cfg, [item])
+    assert stats == dict(confirmed=0, repriced=0, range_skipped=0, above_range=0)
+    assert db.get_deal(before["dedupe_key"]) == before
+    assert counts(db) == initial
+
+
+@pytest.mark.parametrize("conditions,condition", [
+    ([], "Refurbished"), ([], "New - Open Box"), ([], "Used - Like New"),
+    (["refurbished"], "New"), (["open_box"], "New"), (["used"], "New"),
+])
+def test_direct_reprice_rejects_changed_condition(db, cfg, conditions, condition):
+    before = stored(db, cfg, price=100, conditions=conditions)
+    initial = counts(db)
+    post = woot.WootAdapter._map_item(offer(25, 100, condition=condition), SRC, NOW)
+    assert not dedupe.reprice_existing(db, before, post, cfg, NOW)
+    assert db.get_deal(before["dedupe_key"]) == before
+    assert counts(db) == initial
+
+
+@pytest.mark.parametrize("conditions,condition", [
+    ([], "Brand New"), (["Renewed"], "Manufacturer Refurbished"),
+    (["used", "open_box"], "New - Open Box"), (["Pre-Owned"], "Used - Grade B"),
+])
+def test_matching_normalized_condition_can_reprice(db, cfg, conditions, condition):
+    before = stored(db, cfg, price=100, conditions=conditions)
+    assert check(db, cfg, [offer(25, 100, condition=condition)])["repriced"] == 1
+    after = db.get_deal(before["dedupe_key"])
+    assert after["final_price"] == 25 and after["conditions"] == before["conditions"]
+
+
+@pytest.mark.parametrize("conditions,condition", [
+    ([], "Refurbished"), ([], "New - Open Box"), ([], "Used - Like New"),
+    (["refurbished"], "New"), (["open_box"], "New"), (["used"], "New"),
+])
+def test_changed_condition_intake_cannot_overwrite_the_stored_offer(db, cfg, conditions, condition):
+    before = stored(db, cfg, price=100, conditions=conditions)
+    initial = counts(db)
+    post = woot.WootAdapter._map_item(offer(25, 100, condition=condition,
+        Url=before["canonical_url"], Title=before["item"]), SRC, NOW)
+    ext = to_extracted(LLMDeal.model_validate(post.structured), post, "UTC", NOW)
+    for _ in range(2):
+        dedupe.upsert_extracted(db, ext, savings.compute_savings(ext), post, cfg, NOW)
+        assert db.get_deal(before["dedupe_key"]) == before
+        assert counts(db) == initial
+
+
+@pytest.mark.parametrize("conditions", [["used"], ["refurbished"], ["open_box"]])
+@pytest.mark.parametrize("condition_text,explicit_new", [
+    ("", False), ("New customers only", False),
+    ("Condition: New", True), ("Brand new", True),
+])
+def test_partner_intake_requires_explicit_new_condition(db, cfg, conditions, condition_text, explicit_new):
+    before = stored(db, cfg, price=100, conditions=conditions)
+    initial = counts(db)
+    post = woot.WootAdapter._map_item(offer(25, 100, StartDate=util.iso(NOW),
+        Url=before["canonical_url"], Title=before["item"]), SRC, NOW)
+    ext = to_extracted(LLMDeal.model_validate(post.structured), post, "UTC", NOW)
+    post.source_name = "hip2save"
+    post.structured = None
+    post.text = "\n".join([before["item"], "Sale price: $25.00", "List price: $100.00",
+                           condition_text])
+    assert ext.conditions == [] and verify_evidence(ext, post.text)[0]
+    dedupe.upsert_extracted(db, ext, savings.compute_savings(ext), post, cfg, NOW)
+    after = db.get_deal(before["dedupe_key"])
+    if explicit_new:
+        assert after == before and counts(db) == initial
+    else:
+        assert after["final_price"] == 25 and after["conditions"] == before["conditions"]
+
+
 @pytest.mark.parametrize("broken", ["quote", "identity", "source"])
-def test_shared_reprice_still_requires_api_evidence_and_matching_offer(db, cfg, broken):
+@pytest.mark.parametrize("condition", ["New", ""])
+def test_shared_reprice_still_requires_api_evidence_and_matching_offer(db, cfg, broken, condition):
     before = stored(db, cfg)
-    post = woot.WootAdapter._map_item(offer(), SRC, NOW)
+    post = woot.WootAdapter._map_item(offer(condition=condition), SRC, NOW)
     if broken == "quote":
         post.text = post.text.replace("Sale price: $9.99", "Sale price unavailable")
     elif broken == "identity":

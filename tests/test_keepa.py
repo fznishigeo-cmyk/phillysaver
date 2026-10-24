@@ -154,6 +154,28 @@ class FakeKeepa:
 
 
 class TestKeepaAdapter:
+    @pytest.mark.parametrize("title", [
+        "Headphones (Renewed)", "Headphones (Refurbished)",
+        "Headphones - renewed", "Headphones refurbished",
+        "Refurbished Headphones", "Headphones (Used)", "Headphones - Used",
+        "Used Headphones", "Headphones (Open Box)", "Headphones - Open-Box",
+        "Apple iPhone 12 Used - Excellent", "Lightly Used Headphones",
+    ])
+    def test_new_lane_rejects_explicit_non_new_title(self, title):
+        row = dict(_amazon_row(1), title=title)
+        assert KeepaDealsAdapter._map_row(row, SRC, NOW) is None
+
+    @pytest.mark.parametrize("title", [
+        "New headphones", "Refurbished-look headphones", "Headphones used for calls",
+        "Headphones (used for calls)", "Renewed-look headphones", "Unused headphones",
+        "Used for calls headset", "open-box-style organizer", "Amazon Renewed-look headphones",
+    ])
+    def test_new_lane_keeps_titles_without_condition_labels(self, title):
+        row = dict(_amazon_row(1), title=title)
+        post = KeepaDealsAdapter._map_row(row, SRC, NOW)
+        assert post is not None
+        assert post.structured["conditions"] == []
+
     def test_missing_key_raises(self, cfg):
         with pytest.raises(AdapterNotConfigured):
             KeepaDealsAdapter().fetch_posts(SRC, None, None, cfg, NOW, None)

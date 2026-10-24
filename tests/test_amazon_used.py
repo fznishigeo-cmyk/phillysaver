@@ -46,11 +46,27 @@ def test_amazon_only_gate_and_rollback(db, cfg, condition):
 
 @pytest.mark.parametrize("changes", [dict(store="Amazon Warehouse"), dict(store="Amazon Resale"),
     dict(item="Widget Used – Very Good"), dict(item="Widget Sold by Amazon Resale"),
-    dict(item="Widget open-box")])
+    dict(item="Widget open-box"), dict(item="Widget (Renewed)"),
+    dict(item="Widget (Refurbished)"), dict(item="Widget - Renewed"),
+    dict(item="Widget Refurbished"), dict(item="Refurbished Widget"),
+    dict(item="Widget (Used)"), dict(item="Widget - Used"), dict(item="Used Widget"),
+    dict(item="Widget (Open Box)"), dict(item="Apple iPhone 12 Used - Excellent"),
+    dict(item="Lightly Used Headphones")])
 def test_legacy_missing_conditions_are_suppressed(db, cfg, changes):
     row = dict(seed(db, cfg), **changes)
     assert amazon_used.excluded(row, cfg)
     assert not amazon_used.excluded(dict(row, store="Woot", canonical_url="https://www.woot.com/offers/x"), cfg)
+
+
+@pytest.mark.parametrize("title", [
+    "New headphones", "Refurbished-look headphones", "Headphones used for calls",
+    "Headphones (used for calls)", "Renewed-look headphones", "Unused headphones",
+    "Used for calls headset", "open-box-style organizer", "Amazon Renewed-look headphones",
+])
+def test_legacy_title_without_condition_label_stays_publishable(db, cfg, title):
+    row = dict(seed(db, cfg, conditions=[], price_rechecked_at=util.iso(NOW)), item=title)
+    assert not amazon_used.excluded(row, cfg)
+    assert rank.is_publishable(row, cfg)[0]
 
 
 @pytest.mark.parametrize("indexable", [False, True])

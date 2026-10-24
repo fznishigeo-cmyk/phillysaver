@@ -41,6 +41,7 @@ import httpx
 
 from .. import util
 from ..amazon_reference import list_reading, remember_list_price
+from ..amazon_used import title_has_used_condition
 from ..config import AppConfig, get_secret, error_summary
 from ..db import DB
 from ..http_client import PoliteFetcher, api_fetcher
@@ -1258,6 +1259,8 @@ class KeepaDealsAdapter(SourceAdapter):
         title = str(row.get("title") or "").strip()
         if not asin or not title:
             return None
+        if title_has_used_condition(title):
+            return None  # a renewed/refurbished listing is never a NEW-lane offer
         avg_raw = row.get("avg") or row.get("avg90") or row.get("avg30")
         current = _price_at(row.get("current"), price_type)
         basis = _amazon_basis(row, avg_raw, list_ratio, price_type)

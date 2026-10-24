@@ -34,6 +34,7 @@ import httpx
 
 from .. import util
 from ..config import AppConfig, get_secret
+from ..conditions import condition_class
 from ..db import DB
 from ..http_client import api_fetcher
 from ..errors import AdapterNotConfigured, DeadlineExceeded
@@ -95,6 +96,22 @@ USED_MARKER = ("Counted as used/refurbished: Woot does not list it as "
 def _is_used(condition: str) -> bool:
     c = condition.strip()
     return not c or bool(_USED_RE.search(c)) or not _NEW_RE.match(c)
+
+
+def _conditions(condition: str) -> list[str]:
+    if not _is_used(condition):
+        return []
+    label = condition_class([condition])
+    return ["used", label] if label in {"open_box", "refurbished"} else ["used"]
+
+
+def _condition_is_explicit(post: RawPost) -> bool:
+    """The mapper's conservative used fallback is not a stated condition."""
+    if post.structured is not None and "woot_condition" in post.structured:
+        return bool(post.structured["woot_condition"])
+    # Range offers have no structured parse; the mapper still quotes Condition.
+    stated = re.search(r"(?m)^Condition: (.*)\.$", post.text)
+    return bool(stated and stated.group(1).strip())
 
 
 def _num(v: Any) -> float | None:
@@ -260,6 +277,10 @@ def _recheck_offers(db: DB, items: list, now: datetime, *,
         if len(matches) != 1:
             continue
         item = matches[0]
+        condition = str(item.get("Condition") or "").strip()
+        if condition and condition_class(deal.get("conditions")) != condition_class(
+                _conditions(condition)):
+            continue
         payload = dict(deal)
         ends = util.parse_iso(str(item.get("EndDate") or ""))
         if ends is not None and ends <= now:
@@ -485,16 +506,13 @@ class WootAdapter(SourceAdapter):
         structured = None
         plain_money = r"\$\d+(?:,\d{3})*(?:\.\d{1,2})?"
         if re.fullmatch(plain_money, sale) and re.fullmatch(plain_money, list_price):
-            conditions = []
-            if _is_used(condition):
-                conditions = ["used"]
-                if re.search(r"open[\s-]*box", condition, re.I):
-                    conditions.append("open_box")
+            conditions = _conditions(condition)
             structured = {
                 "item": title, "store": "Woot",
                 "product_url": str(item.get("Url") or ""),
                 "online_only": "true", "final_price": _num(sale),
                 "regular_price": _num(list_price), "conditions": conditions,
+                "woot_condition": condition.strip(),
                 "expires_at_raw": end_date, "confidence": 1.0,
                 "evidence": {"final_price_quote": f"Sale price: {sale}",
                              "regular_price_quote": f"List price: {list_price}"},

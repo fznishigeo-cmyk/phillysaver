@@ -15,7 +15,7 @@ import logging
 import re
 from datetime import datetime
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 
 from ..models import Evidence, ExtractedDeal, RawPost
 from ..conditions import normalize_conditions
@@ -185,10 +185,12 @@ class LLMDeal(BaseModel):
     @field_validator("regular_price", "final_price", "pct_off", "abs_savings",
                      "price_upper_bound", mode="before")
     @classmethod
-    def _tolerant_number(cls, v):
+    def _tolerant_number(cls, v, info: ValidationInfo):
         """'$6.25' / '70%' / '1,299.00' -> float. Parsing, never arithmetic;
         anything that is not one plain number means 'no value'."""
         if isinstance(v, str):
+            if "%" in v and info.field_name != "pct_off":
+                return None
             s = v.strip().lstrip("$").replace(",", "").rstrip("%").strip()
             if not s:
                 return None

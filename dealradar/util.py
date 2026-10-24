@@ -167,6 +167,136 @@ def normalize_item(name: str) -> str:
     return " ".join(tokens)
 
 
+_ITEM_QUALIFIERS = frozenset("pro max plus ultra mini lite air se".split())
+_ITEM_UNITS = re.compile(
+    r"\b(\d+(?:\.\d+)?)\s*-?\s*"
+    r"(ct|count|packs?|pk|pcs?|pieces?|qt|quarts?|oz|ounces?|ml|l|liters?|"
+    r"g|grams?|kg|lb|lbs|pounds?|inch(?:es)?|in|ft|feet|[kmgt]b)\b")
+
+
+def _item_text(name: str) -> str:
+    """Canonical unit spellings, without changing persisted name keys."""
+    def unit(match):
+        number, label = match.groups()
+        if label in {"ct", "count", "pack", "packs", "pk", "pc", "pcs", "piece", "pieces"}:
+            label = "ct"
+        elif label in {"quart", "quarts"}:
+            label = "qt"
+        elif label in {"ounce", "ounces"}:
+            label = "oz"
+        elif label in {"liter", "liters"}:
+            label = "l"
+        elif label in {"gram", "grams"}:
+            label = "g"
+        elif label in {"lbs", "pound", "pounds"}:
+            label = "lb"
+        elif label in {"inch", "inches"}:
+            label = "in"
+        elif label == "feet":
+            label = "ft"
+        return number + label
+
+    text = re.sub(r"\$\s?\d[\d,]*(?:\.\d+)?|\d+(?:\.\d+)?\s?%", " ", name.lower())
+    text = re.sub(r"\b(?:packs?|pk)\s+of\s+(\d+)\b", r"\1ct", text)
+    return _ITEM_UNITS.sub(unit, text)
+
+
+def item_identity(name: str) -> frozenset[str]:
+    """Stable suffix material for conflicting legacy name keys, not a veto."""
+    words = re.findall(r"[a-z0-9]+(?:\.[a-z0-9]+)*", _item_text(name))
+    return frozenset(word for word in words
+                     if word in _ITEM_QUALIFIERS or any(char.isdigit() for char in word))
+
+
+_ITEM_ORDINAL = re.compile(r"\b(\d+)(?:st|nd|rd|th)\b(?:\s+(?:generation|gen)\b)?")
+_ITEM_GENERATION = re.compile(r"\b(?:gen(?:eration)?\s+(\d+)|(\d+)\s+gen(?:eration)?)\b")
+
+
+def _item_facts(name: str):
+    text = _item_text(re.sub(r"\b\d+-in-\d+\b", " ", name.lower()))
+    units = {}
+    for match in _ITEM_UNITS.finditer(text):
+        number, unit = match.groups()
+        kind = "ct" if unit == "ct" else "capacity" if unit.endswith("b") and unit != "lb" else "size"
+        units.setdefault(kind, set()).add(number + unit)
+        units.setdefault("unit:" + unit, set()).add(number)
+    text = _ITEM_UNITS.sub(" ", text)
+    generations = set(_ITEM_ORDINAL.findall(text))
+    text = _ITEM_ORDINAL.sub(" ", text)
+    generations.update(a or b for a, b in _ITEM_GENERATION.findall(text))
+    text = _ITEM_GENERATION.sub(" ", text)
+    # Only this known qualified line treats a bare number as a generation.
+    # A base AirPods Pro title is distinct from Pro 2; ordinal/gen aliases
+    # supply that generation too. Unattached bare numbers never veto.
+    airpods = re.search(r"\bairpods\s+pro\b(?:\s+(\d{1,2})\b)?", text)
+    if airpods and airpods[1]:
+        generations.add(airpods[1])
+    words = re.findall(r"[a-z0-9]+", text)
+    models = {word for word in words if
+              (any(c.isalpha() for c in word) and any(c.isdigit() for c in word))
+              or (word.isdigit() and len(word) >= 4 and not 1900 <= int(word) <= 2099)}
+    qualifiers = {}
+    for previous, word in zip(words, words[1:]):
+        if word in _ITEM_QUALIFIERS:
+            qualifiers.setdefault(previous, set()).add(word)
+    return units, models, generations, bool(airpods), words, qualifiers
+
+
+def item_identity_conflict(first: str, second: str) -> bool:
+    """Veto conflicting stated facts; extra facts are normally unknowns.
+
+    Units compare count/capacity/size facts, models require an overlap, and
+    qualifiers compare only after a shared preceding token. Ordinals are
+    generations; only AirPods Pro's known line treats generation absence as
+    a base model. Years, marketing numbers and missing counts do not veto.
+    """
+    au, am, ag, ap, aw, aq = _item_facts(first)
+    bu, bm, bg, bp, bw, bq = _item_facts(second)
+    if any(au[k].isdisjoint(bu[k]) for k in au.keys() & bu.keys()):
+        return True
+    if am and bm and am.isdisjoint(bm):
+        return True
+    if ag and bg and ag.isdisjoint(bg):
+        return True
+    if ap and bp and bool(ag) != bool(bg):
+        return True
+    return any(anchor in aw and anchor in bw and aq.get(anchor, set()) != bq.get(anchor, set())
+               for anchor in aq.keys() | bq.keys())
+
+
+def item_model_match(first: str, second: str) -> bool:
+    """An expanded title can name the same brand/model and product type.
+
+    This supplements fuzzy wording, never the conflict veto. A model in an
+    accessory title is not the product itself; comma suffixes are specs.
+    """
+    _, am, ag, ap, aw, _ = _item_facts(first)
+    _, bm, bg, bp, bw, _ = _item_facts(second)
+    if not aw or not bw or aw[0] != bw[0]:
+        return False
+    accessories = {"case", "cover", "replacement", "adapter", "pads", "cushions", "bundle",
+                   "for", "compatible", "fits"}
+    if set(aw) & accessories != set(bw) & accessories:
+        return False
+    if ap and bp and ag and ag == bg:
+        def generation_name(name):
+            text = _ITEM_ORDINAL.sub(r"\1", name.lower())
+            text = _ITEM_GENERATION.sub(lambda m: m[1] or m[2], text)
+            text = re.sub(r"\bwith\s+usb[ -]?c\b", " ", text)
+            return normalize_item(text)
+        return generation_name(first) == generation_name(second)
+    if not any(len(model) >= 4 for model in am & bm):
+        return False
+
+    def product_word(name):
+        text = _ITEM_UNITS.sub(" ", _item_text(name.split(",", 1)[0]))
+        text = _SIZE_COLOR_TOKENS.sub(" ", text)
+        return [w for w in re.findall(r"[a-z0-9]+", text) if w.isalpha()]
+
+    a, b = product_word(first), product_word(second)
+    return bool(a and b and a[-1] == b[-1])
+
+
 def hours_between(a: datetime, b: datetime) -> float:
     return abs((a - b).total_seconds()) / 3600.0
 

@@ -266,7 +266,7 @@ def test_woot_range_or_missing_price_keeps_llm_read(price):
 
 
 @pytest.mark.parametrize("condition,conditions", [("New", []), ("Open Box", ["used", "open_box"]),
-                                                  ("Refurbished", ["used"]), ("", ["used"])])
+                                                  ("Refurbished", ["used", "refurbished"]), ("", ["used"])])
 def test_woot_plain_prices_parse_in_code(condition, conditions):
     post = woot_post(Condition=condition)
     parser, _ = parser_for()

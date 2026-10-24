@@ -125,7 +125,13 @@ _REBATE_RE = re.compile(r"\brebates?\b|\bmir\b|mail[\s-]?in")
 _DEFERRED_RE = re.compile(
     r"cash[\s-]?back|gift[\s-]?card|store\s+credit|statement\s+credit|portal")
 _SALE_RE = re.compile(r"\b(?:sale|now|price)\b")
-_ABS_OFF_RE = re.compile(r"\boff\b|coupon|clip|discount|save")
+_ABS_OFF_RE = re.compile(r"\b(?:off|coupon|clip|discount|save)\b")
+_SUBSCRIBE_SAVE_RE = re.compile(r"\bsubscribe\s*(?:&|and|\+)\s*save\b")
+_MIN_SPEND_RE = re.compile(
+    r"\boff\s+(?:(?:on\s+)?(?:orders?|purchases?)\s+(?:(?:of|over)\s+)?)?"
+    r"\$\s*(\d+(?:\.\d+)?)")
+_SHIP_DURATION_RE = re.compile(
+    r"\b\d+(?:\s*[-–—]\s*\d+)?[\s-]*(?:business[\s-]+)?(?:days?|hours?|weeks?)\b")
 
 _CHECKOUT_KINDS = ("pct_off", "abs_off", "sale_price")
 _REBATE_KINDS = ("rebate_abs", "rebate_pct")
@@ -286,7 +292,7 @@ def parse_shipping(s: str) -> tuple[float | None, float | None]:
         rest = (text[: m.start()] + " " + text[m.end():]).strip()
 
     cost: float | None = None
-    cm = _NUMBER_RE.search(rest)
+    cm = _NUMBER_RE.search(_SHIP_DURATION_RE.sub("", rest))
     if cm is not None:
         cost = float(cm.group(1))
     elif threshold is None and "free" in rest:
@@ -298,7 +304,8 @@ def parse_stack_step(s: str) -> dict:
     """Classify one stack step string into {'kind': ..., 'value': float | None}.
 
     kinds: 'pct_off' | 'abs_off' | 'rebate_abs' | 'rebate_pct' | 'sale_price'
-           | 'unknown' (ignored for checkout math, logged).
+           | 'deferred' | 'unknown' (ignored for checkout math, logged).
+    Conditional discounts also carry their stated ``min_spend``.
     """
     t = (s or "").strip().lower()
     pct_m = _PCT_RE.search(t)
@@ -313,12 +320,14 @@ def parse_stack_step(s: str) -> dict:
             return {"kind": "rebate_abs", "value": float(money_m.group(1))}
         logger.debug("rebate step with no amount, ignored: %r", s)
         return {"kind": "unknown", "value": None}
+    minimum = _MIN_SPEND_RE.search(t)
+    terms = {"min_spend": float(minimum.group(1))} if minimum else {}
     if pct_m:
-        return {"kind": "pct_off", "value": float(pct_m.group(1))}
+        return {"kind": "pct_off", "value": float(pct_m.group(1)), **terms}
     if money_m and _SALE_RE.search(t) and "off" not in t:
         return {"kind": "sale_price", "value": float(money_m.group(1))}
-    if money_m and _ABS_OFF_RE.search(t):
-        return {"kind": "abs_off", "value": float(money_m.group(1))}
+    if money_m and _ABS_OFF_RE.search(_SUBSCRIBE_SAVE_RE.sub("", t)):
+        return {"kind": "abs_off", "value": float(money_m.group(1)), **terms}
     logger.debug("unknown stack step, ignored for checkout math: %r", s)
     return {"kind": "unknown", "value": None}
 
@@ -384,6 +393,13 @@ def compute_savings(d: models.ExtractedDeal, *, allow_price_only: bool = False) 
         step = _parse_rebate(raw)
         if step["kind"] in _REBATE_KINDS:
             rebate_steps.append(step)
+        elif step["kind"] == "deferred" and "deferred_value" not in flags:
+            flags.append("deferred_value")
+
+    if (d.final_price is None and any("min_spend" in step for step in checkout_steps)
+            and (d.regular_price is None or d.deal_type)):
+        # A scale-free percentage or structural deal cannot prove dollar spend.
+        return models.SavingsResult(computable=False, exclude_reason="minimum_spend")
 
     # ---- Rules 7/8: deal-type driven math ----
     if d.deal_type in ("free_after_rebate", "moneymaker"):
@@ -413,7 +429,7 @@ def _has_in_store_condition(conditions: list[str]) -> bool:
 def _parse_rebate(s: str) -> dict:
     """Parse one entry of ExtractedDeal.rebates (context: it IS a rebate)."""
     step = parse_stack_step(s)
-    if step["kind"] in _REBATE_KINDS:
+    if step["kind"] in (*_REBATE_KINDS, "deferred"):
         return step
     t = (s or "").strip().lower()
     m = _PCT_RE.search(t)
@@ -650,6 +666,9 @@ def _price_basis(d: models.ExtractedDeal, flags: list[str],
                 v = step["value"]
                 if v is None:
                     continue
+                if running < step.get("min_spend", 0):
+                    return models.SavingsResult(computable=False,
+                                                exclude_reason="minimum_spend")
                 if step["kind"] == "sale_price":
                     running = v
                 elif step["kind"] == "abs_off":

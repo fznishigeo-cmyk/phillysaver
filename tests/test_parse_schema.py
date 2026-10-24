@@ -119,6 +119,14 @@ class TestLLMModels:
         )
         assert [d.item for d in deals.deals] == ["a", "c"]
 
+    @pytest.mark.parametrize("field", ["regular_price", "final_price", "price_upper_bound",
+                                      "abs_savings"])
+    def test_percentage_string_cannot_become_a_monetary_amount(self, field):
+        parsed = LLMDeal.model_validate({"item": "Widget", "store": "Amazon",
+                                        field: "40%", "pct_off": "40%"})
+        assert getattr(parsed, field) is None
+        assert parsed.pct_off == 40
+
     def test_two_instances_do_not_share_list_defaults(self):
         a = LLMDeal(item="a", store="s")
         a.codes.append("SAVE10")

@@ -29,6 +29,13 @@ conditions → excluded `in_store`.
 
 ## 2. Price basis
 
+Before math, the evidence gate requires checkout-price context for a final
+price, including text immediately outside a clipped quote. A number used as
+a monthly payment, per-unit comparison, percentage, quantity, coupon minimum,
+reward, or was-price cannot establish a checkout price. Range endpoints need
+`price_is_range=True` and then follow rule 3. Monetary schema fields never
+coerce a percentage string into a dollar amount.
+
 - Regular **and** final both stated ("reg $A now $B", "$A value for $B",
   "$A worth for $B") → `pct = (A - B_adj) / A * 100`, `basis='quoted_regular'`.
 - Explicit `pct_off` stated with **no** regular price → `pct = pct_off`,
@@ -98,6 +105,7 @@ from the teaser "as low as" price would overstate the discount.
 - Both stated ("$6.99 or free over $50") → add the cost only when the final is
   below the threshold.
 - Empty string → nothing.
+- Delivery durations are not charges: "Free 2-day shipping" adds $0.
 
 Accepted inputs (case-insensitive): `''`, `'5.99'`, `'$5.99'`, `'free'`,
 `'free shipping'`, `'free over $35'`, `'free on $25+'`,
@@ -119,6 +127,13 @@ the regular price and apply `parse_stack_step` results sequentially in the
 - `rebate_abs` / `rebate_pct` are collected separately and **never** reduce
   the checkout price,
 - `unknown` steps are ignored for checkout math and logged.
+
+The service name "Subscribe & Save" alone is not dollar-discount wording:
+"Subscribe & Save $8.49" cannot subtract $8.49 from the regular price. Without
+an explicit sale-price or discount phrase, that step is unknown. A stated
+minimum-spend coupon ("$5 off $25", "$5 off orders of $25+") applies only when
+the running item price reaches the minimum; otherwise derived savings are
+not computable (`minimum_spend`). Additional cart items are never assumed.
 
 `pct_at_checkout` comes from the running total (shipping-adjusted);
 `pct_with_rebates` additionally subtracts the rebates (percent rebates are
@@ -184,6 +199,8 @@ effective `5 - 8 = -$3` → `pct_with_rebates = (5 - (-3)) / 5 * 100 = 160.0%`,
 future value, not savings on this purchase. Stack steps worded as cashback /
 gift-card-back / store or statement credit / portal offers are classified as
 deferred too ("10% cash back" is NOT a 10%-off code) and only set the flag.
+This also holds when reward wording was mistakenly put in the `rebates` list;
+its field placement cannot turn future store value into a cash rebate.
 
 **Worked example:** "$50 item + $40 gift card back" → pct is **0.0%**
 (not 80%), flags `['deferred_value']`.

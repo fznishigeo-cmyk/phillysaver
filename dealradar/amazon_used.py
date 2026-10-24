@@ -3,6 +3,17 @@
 import re
 
 
+_TITLE_CONDITION_RE = re.compile(
+    r"(?<![\w-])(?:renewed|refurbished|open[ -]box"
+    r"|used(?!\s+(?:for|to|as|in)\b))(?![\w-])"
+    r"|(?<![\w-])used\s*[-–—:]\s*(?:like\s+new|very\s+good|good|acceptable)\b", re.I)
+
+
+def title_has_used_condition(title):
+    """Recognize condition labels, excluding compounds and descriptive 'used for'."""
+    return bool(_TITLE_CONDITION_RE.search(str(title or "")))
+
+
 def excluded(deal, cfg):
     from .verify import is_amazon_deal
 
@@ -18,10 +29,9 @@ def used_offer(deal):
 
     # Older imports can name Resale in the store/title without a condition.
     words = " ".join(str(deal.get(k) or "") for k in ("store", "item"))
-    return (is_used_deal(deal) or bool(re.search(r"\b(?:warehouse|resale)\b", str(deal.get("store") or ""), re.I))
-            or bool(re.search(
-        r"\bamazon\s+(?:warehouse|resale|renewed)\b|\bused\s*[-–—:]\s*"
-        r"(?:like\s+new|very\s+good|good|acceptable)\b|\bopen[ -]box\b", words, re.I)))
+    return (is_used_deal(deal) or title_has_used_condition(words)
+            or bool(re.search(r"\b(?:warehouse|resale)\b", str(deal.get("store") or ""), re.I))
+            or bool(re.search(r"\bamazon\s+(?:warehouse|resale)\b", words, re.I)))
 
 
 def summary(db, cfg):

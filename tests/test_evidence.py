@@ -144,3 +144,74 @@ class TestVerifyEvidence:
         ok, reason = verify_evidence(deal, TEXT)
         assert ok is False
         assert field in reason
+
+
+@pytest.mark.parametrize("text,value", [
+    ("$24/mo for 24 months", 24),
+    ("Save 40%", 40),
+    ("40% off", 40),
+    ("2 for $10", 2),
+    ("$0.31/count", .31),
+    ("$12.99 ($0.54 / Count)", .54),
+    ("$5 off $25", 25),
+    ("$5 off orders of $25+", 25),
+    ("$10 Kohl’s Cash", 10),
+    ("was $49.99 now $19.99", 49.99),
+    ("from $9.99", 9.99),
+    ("$9.99 - $19.99", 9.99),
+    ("$9.99 - $19.99", 19.99),
+])
+@pytest.mark.parametrize("clipped", [False, True])
+def test_final_price_requires_checkout_context(text, value, clipped):
+    quote = f"{value:g}" if clipped else text
+    candidate = make_deal(final_price=value, evidence=Evidence(final_price_quote=quote))
+    ok, reason = verify_evidence(candidate, text)
+    assert not ok
+    assert "final_price" in reason
+
+
+@pytest.mark.parametrize("text,value", [
+    ("was $49.99 now $19.99", 19.99),
+    ("2 for $10", 10),
+    ("$12.99 ($0.54 / Count)", 12.99),
+    ("Save 40%: now $40", 40),
+    ("$24/mo for 24 months; outright price $240", 240),
+    ("Now $20, receive $10 Kohl’s Cash", 20),
+    ("Subscribe & Save $8.49", 8.49),
+    ("A 24-count pack for $24", 24),
+])
+def test_checkout_amount_still_passes_among_other_numbers(text, value):
+    candidate = make_deal(final_price=value, evidence=Evidence(final_price_quote=text))
+    assert verify_evidence(candidate, text) == (True, "")
+
+
+@pytest.mark.parametrize("text", ["from $9.99 up to $19.99", "$9.99 - $19.99"])
+def test_explicitly_flagged_range_keeps_verified_bounds(text):
+    candidate = make_deal(final_price=9.99, price_is_range=True, price_upper_bound=19.99,
+                          evidence=Evidence(final_price_quote="$9.99",
+                                            price_upper_bound_quote="$19.99"))
+    assert verify_evidence(candidate, text) == (True, "")
+
+
+@pytest.mark.parametrize("unit", ["ml", "g", "kg", "ea"])
+def test_unit_comparison_context_never_becomes_checkout_price(unit):
+    text = f"$12.99 ($0.25/{unit})"
+    candidate = make_deal(final_price=.25, evidence=Evidence(final_price_quote="$0.25"))
+    assert not verify_evidence(candidate, text)[0]
+    actual = make_deal(final_price=12.99, evidence=Evidence(final_price_quote="$12.99"))
+    assert verify_evidence(actual, text) == (True, "")
+
+
+@pytest.mark.parametrize("value", [9.99, 19.99])
+def test_written_range_separator_needs_explicit_range_flag(value):
+    text = "$9.99 to $19.99"
+    candidate = make_deal(final_price=value, evidence=Evidence(final_price_quote=text))
+    assert not verify_evidence(candidate, text)[0]
+    candidate.price_is_range = True
+    assert verify_evidence(candidate, text) == (True, "")
+
+
+@pytest.mark.parametrize("source_minimum", ["$250", "$25.99"])
+def test_coupon_minimum_requires_the_whole_source_amount(source_minimum):
+    candidate = make_deal(stack_steps=["$5 off $25"])
+    assert not verify_evidence(candidate, f"Coupon: $5 off {source_minimum}")[0]

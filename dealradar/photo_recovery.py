@@ -12,6 +12,7 @@ from .errors import DeadlineExceeded
 from .http_client import resolve_redirects
 from .keepa_budget import KeepaBudget, MIN_FOR_IMAGE_BACKFILL, response_payload
 from .product_images import _dice, _unwrap, link_key, name_words
+from .util import item_identity_conflict
 from .verify import _current_price, _harvest_image, is_amazon_deal
 
 SEARCH_META = "photo_keepa_search"
@@ -86,7 +87,10 @@ def post_identity(extracted, post):
     if own:
         return own
     from .util import normalize_item
-    if extracted.link_shared or len({normalize_item(item) for item, _ in post.parsed}) > 1:
+    items = [item for item, _ in post.parsed]
+    if (extracted.link_shared or len({normalize_item(item) for item in items}) > 1
+            or any(item_identity_conflict(item, other)
+                   for i, item in enumerate(items) for other in items[i + 1:])):
         return ""
     from .product_images import _names_no_product
     own_url = extracted.product_url or ""
@@ -346,9 +350,8 @@ def title_match(deal, products, minimum):
     brand = set(re.findall(r"[a-z0-9]+", (deal.get("brand") or "").lower()))
     if not brand <= words:
         return ""
-    # Model/capacity/count numbers cannot be explained away by a high overlap.
-    theirs = name_words(product.get("title") or "")
-    if {w for w in mine if any(c.isdigit() for c in w)} != {w for w in theirs if any(c.isdigit() for c in w)}:
+    # Product variants cannot be explained away by a high word overlap.
+    if item_identity_conflict(deal.get("item") or "", product.get("title") or ""):
         return ""
     current = (product.get("stats") or {}).get("current")
     prices = [_current_price(current, i) for i in (0, 1, 4)]

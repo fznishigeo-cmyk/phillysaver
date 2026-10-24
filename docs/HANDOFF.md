@@ -244,6 +244,66 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Backend accuracy (branch `accuracy`, 2026-10-24; uncommitted):** Test-first
+  fixes for B1/B2/C1/C2/A2/A1/C3 and optional A3/A4. Woot rechecks,
+  same-row repricing and intake reject explicitly changed normalized conditions
+  before recording prices or confirmations; new/refurbished/open-box/used remain
+  separate. Missing/null/blank Woot Condition retains prior end-date, freshness,
+  confirmation and repricing behavior, preserving the stored condition. Mapper
+  provenance distinguishes unknown from its conservative used discovery fallback;
+  partner intake also requires explicit condition facts before vetoing a match.
+  Keepa's NEW mapper rejects explicit non-new title labels, and
+  the same precise recognizer suppresses legacy Amazon rows (compound and
+  descriptive wording stays eligible). Fuzzy/code-assisted dedupe vetoes
+  conflicting model, generation, quantity, capacity and qualifier facts;
+  roundup link recovery and photo matches use the same conflict function.
+  Facts are compared by kind: missing counts/specs are unknown; conflicting
+  supplied counts, capacities/sizes or nonoverlapping model tokens veto.
+  Qualifiers differ only after a shared preceding token. Ordinal/gen spellings
+  normalize to generation numbers. Only the known AirPods Pro line treats a
+  bare following generation number as distinct from its absence: Pro 2 stays
+  separate from bare Pro, but 2 / 2nd Generation / 2nd Gen with USB-C merge.
+  Years, unattached short numbers and 3-in-1 marketing wording do not veto.
+  Expanded titles can match the same leading brand/model and product noun;
+  accessory/compatibility wording cannot supply that match. The eight requested
+  positive title pairs (including all three AirPods aliases) corroborate and
+  replay in both directions at the existing fuzzy threshold, with/without codes.
+  Existing `normalize_item` and stored keys stay unchanged: only a new
+  conflicting name-key collision gets a deterministic identity suffix, with
+  replay coverage for both rows. Photo matching drops its separate numeric-set
+  equality veto; similarity, brand, runner-up gap and price gates stay intact.
+  Subscription price wording no longer manufactures dollar discounts;
+  minimum-spend coupons require the running item price and whole-number
+  evidence for the minimum. Final-price evidence rejects monthly/unit prices,
+  quantities, percentages, thresholds, rewards, was-prices and unflagged ranges,
+  including context outside clipped quotes. Monetary schema fields reject
+  percentage strings. Deferred rewards in `rebates` stay deferred; shipping
+  durations are not charges. `SAVINGS_RULES.md` records these rules.
+  Every defect has a recorded failing-before regression in `/tmp/accuracy-*`.
+  Final combined regression run: **500 passed**, including both offline rerun
+  modes; neighbouring selections: Woot **240 + 38**, Keepa **204**, identity
+  **126**, photo **283**, parse/evidence/savings **293** (overlapping selections).
+  Original runs used the operator's `-n 2 -p no:cacheprovider` command and shared
+  `/tmp/claude-0/btAcc`. Review regressions reproduced **24 Woot**, **6 partner
+  intake**, **34 identity/photo**, and **8 additional identity edge** failures
+  before their fixes (`/tmp/accuracy-review-*-before.log`). Review identity/photo/
+  dedupe/corroboration selection: **380 passed**; final Woot/dedupe selection:
+  **290 passed**, with **256 passed** in the preceding Woot/full offline-e2e
+  selection (including idempotency). The exact requested full command used
+  `/tmp/claude-0/btAcc2`: **10,141 passed, 57 skipped, 8 failed in 4796.14s**
+  (`/tmp/accuracy-review-full-suite.log`). Seven unchanged Stripe workflow tests
+  cannot create localhost sockets in this sandbox (`PermissionError: EPERM`).
+  The eighth was a stale `test_ai_spend` assertion expecting only `used` for an
+  explicitly refurbished Woot offer; it now requires both `used` and `refurbished`.
+  Final Woot/AI-spend rerun: **167 passed** (`/tmp/accuracy-review-final-woot-spend.log`).
+  No production changes after the full run; no second full run after that
+  assertion-only correction. `git diff --check` passes.
+  The three original e2e/freshness/death fixture files are restored byte-for-byte
+  to HEAD. No live calls, commit or push. Remaining: a full green run where
+  localhost sockets are permitted, and operator review. No live-row repair/migration
+  was attempted: legacy generic-used
+  Woot rows cannot confirm a now explicitly refurbished feed offer, and already
+  merged historical rows remain unchanged.
 - **Hourly Keepa overflow (dad61e5, 2026-10-23; ships with relR):**
   Hourly #352 admitted only 10 Buy Box candidates despite a 350-token surplus:
   ordinary cadence excluded other top deals before the surplus queue. New

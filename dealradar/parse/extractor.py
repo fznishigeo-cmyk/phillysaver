@@ -98,6 +98,42 @@ def _number_in_quote(value: float, nquote: str, text: str | None = None) -> bool
     return False
 
 
+_NON_CHECKOUT_SUFFIX = re.compile(
+    r"^\s*(?:%|percent\b|off\b|for\s+\$|months?\b|"
+    r"(?:/\s*|per\s+)(?:mo(?:nth)?s?|years?|weeks?|days?|count|ct|units?|"
+    r"items?|oz|ounces?|lb|pounds?|ml|g|kg|ea|packs?|pieces?|each)\b|"
+    r"kohl[’']?s\s+cash\b|gift[ -]?cards?\b|cash[ -]?back\b|"
+    r"(?:store|statement)\s+credit\b|rewards?\b)", re.I)
+_NON_CHECKOUT_PREFIX = re.compile(
+    r"\b(?:was|reg(?:ular(?:ly)?)?\.?|original(?:ly)?|list|msrp)"
+    r"(?:\s+price)?\s*[:=]?\s*\$?\s*$|"
+    r"\boff\s+(?:(?:on\s+)?(?:orders?|purchases?)\s+(?:(?:of|over)\s+)?)?\$?\s*$|"
+    r"\b(?:spend|minimum|orders?\s+(?:of|over)|free\s+(?:shipping\s+)?over)"
+    r"\s*\$?\s*$", re.I)
+_RANGE_PREFIX = re.compile(
+    r"\b(?:from|as\s+low\s+as|starting(?:\s+at)?|under|up\s+to)\s*\$?\s*$|"
+    r"\d[\d,.]*\s*(?:[-–—]|to)\s*\$?\s*$", re.I)
+_RANGE_SUFFIX = re.compile(r"^\s*(?:[-–—]|to\b)\s*\$?\s*\d", re.I)
+
+
+def _checkout_number_in_quote(value: float, quote: str, text: str, *,
+                              price_is_range: bool) -> bool:
+    """Require one matching amount in checkout context, including outside a clipped quote."""
+    for occurrence in re.finditer(re.escape(quote), text):
+        for candidate in _number_candidates(value):
+            pattern = re.compile(r"(?<![\d.,])" + re.escape(candidate) + r"(?![.,]?\d)")
+            for match in pattern.finditer(text, occurrence.start(), occurrence.end() + 2):
+                if match.end() > occurrence.end():
+                    continue
+                before, after = text[:match.start()], text[match.end():]
+                if _NON_CHECKOUT_PREFIX.search(before) or _NON_CHECKOUT_SUFFIX.search(after):
+                    continue
+                if not price_is_range and (_RANGE_PREFIX.search(before) or _RANGE_SUFFIX.search(after)):
+                    continue
+                return True
+    return False
+
+
 def verify_evidence(deal: ExtractedDeal, text: str) -> tuple[bool, str]:
     """Verify every non-null price/pct is backed by a verbatim quote.
 
@@ -130,6 +166,9 @@ def verify_evidence(deal: ExtractedDeal, text: str) -> tuple[bool, str]:
         if not _number_in_quote(value, nquote, ntext):
             return False, (f"{label}: quote {nquote!r} does not contain the "
                            f"number {value:g} on digit boundaries")
+        if label in {"final_price", "price_upper_bound"} and not _checkout_number_in_quote(
+                value, nquote, ntext, price_is_range=deal.price_is_range):
+            return False, f"{label}: number has no checkout-price context (or needs a range flag)"
         if label == "pct_off" and "%" not in nquote and "percent" not in nquote.lower():
             return False, f"pct_off: quote {nquote!r} carries no %% sign"
     from ..savings import parse_shipping, parse_stack_step
@@ -172,7 +211,8 @@ def verify_evidence(deal: ExtractedDeal, text: str) -> tuple[bool, str]:
                 return False, f"{label}: input not found verbatim in text"
             step = parse_stack_step(quote)
             if step["value"] is not None:
-                if not _number_in_quote(step["value"], quote, ntext):
+                if any(not _number_in_quote(amount, quote, ntext) for amount in
+                       (step["value"], step.get("min_spend")) if amount is not None):
                     return False, f"{label}: number is only part of the source amount"
                 if quote in math_quotes:
                     return False, f"{label}: the same mathematical input is repeated"

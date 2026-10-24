@@ -37,3 +37,11 @@ def normalize_conditions(conditions) -> list[str]:
 
 
 USED_CONDITIONS = frozenset({"used", "open_box", "refurbished"})
+
+
+def condition_class(conditions) -> str:
+    labels = set(normalize_conditions(conditions))
+    for label in ("open_box", "refurbished", "used"):
+        if label in labels:
+            return label
+    return "new"
