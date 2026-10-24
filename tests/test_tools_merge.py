@@ -84,7 +84,7 @@ def test_off_changes_no_byte(tmp_path, monkeypatch):
     without, _ = build(tmp_path, monkeypatch, False, "without")
     assert files(off) == files(without)
     for name, data in files(off).items():
-        for marker in (b"trusted-guide", b"words-box", b"report-row", b"tool_feedback", b"#1c62db", b"#b62d69",
+        for marker in (b"trusted-guide", b"words-box", b"report-row", b"tool_feedback", b"#2a63cb", b"#a7396e",
                        b"mergeReport", b"price_check", b"tools_merge", b"landing-intro"):
             assert marker not in data, (name, marker)
     home = page(off, "")
@@ -255,8 +255,8 @@ def test_soft_buttons_in_place_contrast_and_scope(tmp_path, monkeypatch):
         css = (out / name).read_text()
         for old, new in soft_buttons.SOFTER:
             assert old not in css
-        assert "--pill-colors:#1c62db,#125fdd 52%,#0f4fba;--pill-glow:rgba(59,130,246,.3)" in css
-        assert "var(--pill-colors,#582aa1,#8a32da 50%,#b62d69)" in css
+        assert "--pill-colors:#2a63cb,#2060ca 52%,#1c51af;--pill-glow:rgba(59,130,246,.1)" in css
+        assert "var(--pill-colors,#5c359e,#8540cc 50%,#a7396e)" in css
         version = hashlib.sha256(css.encode()).hexdigest()[:12]
         for path in out.rglob("*.html"):
             for found in re.findall(r"/" + re.escape(name) + r"\?v=([a-f0-9]+)", path.read_text()):

@@ -111,10 +111,10 @@ async function contrastAudit(page, scope) {
           assert(stops.length >= 3, look.image);
           for (const stop of stops) assert(contrast(stop, [255, 255, 255]) >= 4.5, 'button stop ' + stop);
           assert.equal(look.color, 'rgb(255, 255, 255)'); assert(look.height >= 44, 'tap height ' + look.height);
-          assert(/rgba\((147, 51, 234, 0\.21|59, 130, 246, 0\.3)\)/.test(look.shadow), 'softer glow ' + look.shadow);
+          assert(/rgba\((147, 51, 234, 0\.12|59, 130, 246, 0\.1)\)/.test(look.shadow), 'softer glow ' + look.shadow);
         }
-        assert(/rgb\(28, 98, 219\)/.test(await spot.evaluate(el => getComputedStyle(el).backgroundImage)), 'soft blue');
-        assert(/rgb\(138, 50, 218\)/.test(await rev.evaluate(el => getComputedStyle(el).backgroundImage)), 'soft purple');
+        assert(/rgb\(42, 99, 203\)/.test(await spot.evaluate(el => getComputedStyle(el).backgroundImage)), 'soft blue');
+        assert(/rgb\(133, 64, 204\)/.test(await rev.evaluate(el => getComputedStyle(el).backgroundImage)), 'soft purple');
         await noScroll(); await shot('home');
         // The tools get their own tab. The homepage's own search may still look up the typed words
         // after this point (search-more.js's page-0 lookup landed after a plain calls.length = 0 in
