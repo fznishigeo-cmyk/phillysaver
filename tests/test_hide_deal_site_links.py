@@ -194,6 +194,18 @@ def test_price_only_spotlight_uses_the_same_filter(db, cfg):
     assert row['item'] not in (Path(cfg.site_dir) / 'index.html').read_text()
 
 
+def test_linkless_price_only_spotlight_is_counted(db, cfg):
+    # Review of eab121d: a spotlight card dropped for want of a link counts too.
+    cfg.front_page = load_config().front_page
+    row = daily_deal(codes=[], pct_at_checkout=None, regular_price=None, abs_savings=None, image_url=PIC)
+    result = site.render_site(db, cfg, NOW, deals=[row])
+    assert len(result['full_payload']['spotlight']) == 1 and result['unpublished_linkless'] == 0
+    row = dict(row, canonical_url='/broken', sightings=[dict(row['sightings'][0], source_url='')])
+    result = site.render_site(db, cfg, NOW, deals=[row])
+    assert not result['full_payload'].get('spotlight')
+    assert result['unpublished_linkless'] == 1
+
+
 def test_summary_does_not_count_rows_already_hidden_by_photos(db, cfg):
     cfg.hide_deal_site_links = True
     row = make_deal(canonical_url=POST, image_url='', first_seen_at=iso(NOW - timedelta(days=1)))

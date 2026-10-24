@@ -263,6 +263,8 @@ UNCLEAN_LINKS = [
     ('//www.target.com/p/retro-telephone/-/A-87654321', 'https://www.target.com/p/retro-telephone/-/A-87654321'),
     (' https://www.walmart.com/ip/Retro Telephone/123 ', 'https://www.walmart.com/ip/Retro%20Telephone/123'),
     ('http://www.amazon.com/s?k=lego+31174&tag=source-20', 'https://www.amazon.com/s?k=lego+31174&tag=wowpriced-20'),
+    ('\x01HTTPS://www.amazon.com/s?k=lego+31174\t', 'https://www.amazon.com/s?k=lego+31174&tag=wowpriced-20'),
+    ('https://bücher.de/lego-31174', 'https://xn--bcher-kva.de/lego-31174'),
     ('https://www.walmart.com:8443/ip/123', ''),
     ('https://deals:secret@www.walmart.com/ip/123', ''),
     ('/ip/123', ''),

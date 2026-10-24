@@ -90,20 +90,27 @@ def https_url(url: str) -> str:
     deal was no clean HTTPS URL). Surrounding whitespace goes; an http:// or
     scheme-relative link is upgraded to https (stores serve HTTPS; host, path
     and query stay as they are); spaces and other unsafe characters are
-    percent-encoded. Credentials, a non-default port, a relative path, an IP
-    or single-label host and any other scheme are no store link: the deal is
-    linkless. A clean https link comes back unchanged.
+    percent-encoded; a Unicode host is written in its IDNA (xn--) form.
+    Credentials, a non-default port, a relative path, an IP or single-label
+    host and any other scheme are no store link: the deal is linkless. A
+    clean https link comes back unchanged.
     """
-    url = re.sub(r"[\t\n\r]", "", str(url or "")).strip()
+    # Control bytes and spaces around the link go first, as urlsplit drops
+    # them too: the suffix below is sliced from this exact string.
+    url = re.sub(r"^[\x00-\x20\s]+|[\x00-\x20\s]+$", "", re.sub(r"[\t\n\r]", "", str(url or "")))
     if url.startswith("//"):
         url = "https:" + url
     try:
         parts = urlsplit(url)
         scheme = parts.scheme.lower()
         host, _, port = parts.netloc.partition(":")
+        hostname = parts.hostname or ""
+        if not hostname.isascii():
+            host = hostname = hostname.encode("idna").decode("ascii")
         if scheme not in ("http", "https") or "@" in parts.netloc \
                 or port not in ("", "443" if scheme == "https" else "80") \
-                or not _HOST_NAME.fullmatch(parts.hostname or ""):
+                or not _HOST_NAME.fullmatch(hostname) \
+                or not url[len(scheme):].startswith("://" + parts.netloc):
             return ""
         rest = url[len(scheme) + 3 + len(parts.netloc):]
         return "https://" + host + _UNSAFE_URL_CHAR.sub(lambda m: quote(m[0], safe=""), rest)

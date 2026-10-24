@@ -903,13 +903,17 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         # only ended cards are linkless by design.
         return deal.get("status", "alive") != "alive" or bool(facts_for(deal, required=True).url)
 
-    linked = [d for d in visible if has_link(d)]
-    unpublished_linkless = len(visible) - len(linked)
+    linkless = {d["dedupe_key"] for d in visible if not has_link(d)}
+    spotlight_linked = [d for d in spotlight_rows if has_link(d)]
+    if len(spotlight_linked) < len(spotlight_rows):
+        # Count only spotlight cards that would have shown, as hidden_deal_site_links does.
+        linkless |= {d["dedupe_key"] for d in daily_spotlight(spotlight_rows, cfg, now) if not has_link(d)}
+    unpublished_linkless = len(linkless)
     if unpublished_linkless:
         logger.info("unpublished_linkless: %d live deal(s) without a usable https Get deal link",
                     unpublished_linkless)
-    visible = linked
-    spotlight_rows = [d for d in spotlight_rows if has_link(d)]
+    visible = [d for d in visible if has_link(d)]
+    spotlight_rows = spotlight_linked
     deals = visible
     timed("rank")
     serialized = [_serialize_deal(d, now, amazon_tag, overrides, links=facts_for(d), **link_options) for d in deals

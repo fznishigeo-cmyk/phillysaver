@@ -210,6 +210,15 @@ EBAY = ("https://ebay.com/itm/9?var=55&mkcid=1&mkrid=711-53200-19255-0&siteid=0"
     ({"canonical_url": "https://walmart.com/ip/lego set 12345"}, {}, "https://walmart.com/ip/lego%20set%2012345", False),
     ({"canonical_url": "http://www.amazon.com/s?k=lego+31174&tag=theirs-20"}, {},
      "https://www.amazon.com/s?k=lego+31174&tag=" + TAG, True),
+    # Review of eab121d: control bytes and tabs around a link never move the host.
+    ({"canonical_url": "\x01HTTPS://amazon.com/dp/B012345678"}, {}, AMAZON + "?tag=" + TAG, True),
+    ({"canonical_url": "\t\x00 HTTPS://amazon.com/dp/B012345678\x1f\t"}, {}, AMAZON + "?tag=" + TAG, True),
+    ({"canonical_url": " \x01\x02http://walmart.com/ip/12345\t\x00"}, {}, DIRECT, False),
+    ({"canonical_url": "https://walmart.com/ip/12345\x00 "}, {}, DIRECT, False),
+    # A Unicode host opens in its IDNA form; one IDNA cannot encode is no link.
+    ({"canonical_url": "https://bücher.de/item"}, {}, "https://xn--bcher-kva.de/item", False),
+    ({"canonical_url": "http://BÜCHER.de/item"}, {}, "https://xn--bcher-kva.de/item", False),
+    ({"canonical_url": "https://" + "ü" * 64 + ".de/item"}, {}, POST, False),
 ])
 def test_independent_final_routes(changes, options, url, earns):
     row = make_deal(**{"codes": [], "conditions": [], "canonical_url": DIRECT, **changes})

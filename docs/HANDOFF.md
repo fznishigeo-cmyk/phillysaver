@@ -252,9 +252,11 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   skips non-https links (no Amazon tag, no eBay EPN). Port/credential/relative/other-scheme
   links and linkless live deals were published too. Now `link_facts.https_url` normalises
   once in `derive_link_facts` (before tagging, and the final Get deal): http:// and `//`
-  open as https, spaces are encoded; an unusable link is no link (the ASIN / credited-post
+  open as https, spaces are encoded, surrounding control bytes are dropped, a Unicode host
+  opens in its IDNA (xn--) form; an unusable link is no link (the ASIN / credited-post
   routes, then hidden). `render_site` drops a live deal left without a Get deal
-  (`unpublished_linkless` in the run summary). Stored rows unchanged. Tests:
+  (`unpublished_linkless` in the run summary, grid plus would-be spotlight cards). Stored
+  rows unchanged. Tests:
   test_publish_link_facts (fixture: the three http target rows), test_hide_deal_site_links,
   test_code_deals (http Walmart now earns like https), test_visitor_watch (watch check on
   real serializer and rendered cards). Telegram channel
