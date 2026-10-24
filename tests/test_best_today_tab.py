@@ -70,8 +70,10 @@ def test_on_pill_after_trending_on_the_home_row_only(tmp_path, monkeypatch):
     assert new != old
     before, after = files(off), files(on)
     assert after.keys() == before.keys()
-    # Hubs, store pages and the best-deals page itself keep their bytes (only the version moves).
-    assert {k for k in after if after[k] != before[k].replace(old, new)} == {"index.html"}
+    # Hubs and store pages keep their bytes (only the version moves); the best-deals page
+    # wears the home header (best_today_header), where the pill is the current page.
+    assert {k for k in after if after[k] != before[k].replace(old, new)} == {"index.html", "best-deals-today/index.html"}
+    assert '<a class="cattab active" aria-current="page">Best today</a>' in after["best-deals-today/index.html"].decode()
     home = after["index.html"].decode()
     row = re.search(r'<nav id="cattabs"[^>]*>(.*?)</nav>', home, re.S)[1]
     assert row.startswith('<a class="cattab active" href="/" data-i="0">Trending</a>' + PILL

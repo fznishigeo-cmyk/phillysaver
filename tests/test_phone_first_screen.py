@@ -76,7 +76,9 @@ def test_off_missing_rerun_back_changes_no_byte(tmp_path, monkeypatch):
     assert files(build(tmp_path / "missing", None, rows=120)) == off
     assert b"deal-steps" not in off["index.html"]  # the tool pages' own cards have always had theirs
     on = files(build(tmp_path / "on", True, rows=120))
-    assert {k for k in on if on[k] != off.get(k)} == {"index.html", "deals.json"} and on.keys() == off.keys()
+    # The best-deals page wears the home header (best_today_header): its phone rules come along.
+    assert {k for k in on if on[k] != off.get(k)} == {"index.html", "deals.json", "best-deals-today/index.html"}
+    assert on.keys() == off.keys()
     assert files(build(tmp_path / "on", True, rows=120)) == on  # a rerun is byte-stable
     assert files(build(tmp_path / "on", False, rows=120)) == off  # and back
 

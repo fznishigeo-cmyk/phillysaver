@@ -244,6 +244,29 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **/best-deals-today/ wears the home header (branch `bdt-header` from relS `ed835b7`,
+  2026-10-24; ON, committed, not pushed):** Nishi ~02:00Z: "best deals today removes the
+  search bar... please fix and push it through". Cause: the page is written from
+  `templates/hub.html` (seo._landing_page), whose header predates the home's; the home
+  header is built only by passes over index.html. `best_today_header: true` (strict bool,
+  default false; `publish/best_today_header.py`) runs after every page pass and copies the
+  finished home `<header>` (logo as a paragraph, "Best today" pill selected with
+  aria-current and no self-link, the live-count line drawn server-side like the home
+  script; the hidden drop timer, run by the home's wall script, is left out), the home
+  stylesheet rules that can reach the header (in order; the page's own rules are kept off
+  the header, so its cards look as before), the Tab-key focus snippet and the join-dialog
+  loader. Enter opens `/?analyze=<words>` (the event pages' entry point), so
+  the home's own search runs: same results, events, Amazon tag; tool buttons carry `?q=`.
+  Home, deals.json and every other page byte-identical on or off (no site_version change);
+  off: no byte (`pre_best_today_header`). Real Chromium 390x844 / 1280x800, light and dark:
+  header computed styles and boxes equal the home's element for element; content below
+  unchanged vs off (title keeps its 32px below the phone tab row). Still on the old hub
+  header: category hubs, store/price pages, deal pages, event pages, product(-family)
+  pages; about/how-it-works/hacks/contact/careers/privacy/disclosure have their own old one.
+  Tests `tests/test_best_today_header.py` (runs `tests/best_today_header_browser.cjs`);
+  `test_best_today_tab` / `test_phone_first_screen` now expect the best page to change with
+  their switches (it carries their header). Related files: 2,054 passed, incl. rerun
+  idempotency and the phone budget; the full suite was not run (shared machine).
 - **Hourly Keepa overflow (dad61e5, 2026-10-23; ships with relR):**
   Hourly #352 admitted only 10 Buy Box candidates despite a 350-token surplus:
   ordinary cadence excluded other top deals before the surplus queue. New

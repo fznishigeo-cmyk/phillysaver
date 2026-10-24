@@ -730,6 +730,7 @@ def pre_social_profiles(cfg):
     pre_keep_first_cards(cfg)
     pre_best_today_tab(cfg)
     pre_phone_first_screen(cfg)
+    pre_best_today_header(cfg)
     return cfg
 
 
@@ -766,6 +767,12 @@ def pre_best_today_tab(cfg):
 def pre_phone_first_screen(cfg):
     """Before phones showed the first deals and their buttons on the first screen (operator 2026-10-23)."""
     cfg.phone_first_screen = False
+    return cfg
+
+
+def pre_best_today_header(cfg):
+    """Before /best-deals-today/ wore the home header (operator 2026-10-24 ~02:00Z)."""
+    cfg.best_today_header = False
     return cfg
 
 
