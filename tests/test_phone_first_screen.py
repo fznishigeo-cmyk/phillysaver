@@ -46,7 +46,7 @@ def build(root, on, rows=300, **changes):
 
 
 def test_switch_strict_default_shipped_off_and_pinned(tmp_path):
-    assert load_config().phone_first_screen is False  # until the operator approves the screenshots
+    assert load_config().phone_first_screen is True  # operator approved 2026-10-24 (A54, the exact phrase)
     assert AppConfig().phone_first_screen is False
     on = load_config()
     on.phone_first_screen = True
