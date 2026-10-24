@@ -434,6 +434,7 @@ class AppConfig:
     fresh_more_plain: bool = False
     keep_first_cards: bool = False     # the module's first render patches the server's cards in place
     best_today_tab: bool = False       # a "Best today" link pill after Trending in the home tab row
+    best_today_header: bool = False    # /best-deals-today/ wears the finished home header
     phone_first_screen: bool = False   # phones: the first deals and their buttons on the first screen
     search_circle: bool = False
     search_analyze: dict = field(default_factory=lambda: validated_search_analyze(None))
@@ -1360,6 +1361,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.best_today_tab = g("best_today_tab", default=False)
     if type(cfg.best_today_tab) is not bool:
         raise ValueError("best_today_tab must be a boolean")
+    cfg.best_today_header = g("best_today_header", default=False)
+    if type(cfg.best_today_header) is not bool:
+        raise ValueError("best_today_header must be a boolean")
     cfg.phone_first_screen = g("phone_first_screen", default=False)
     if type(cfg.phone_first_screen) is not bool:
         raise ValueError("phone_first_screen must be a boolean")

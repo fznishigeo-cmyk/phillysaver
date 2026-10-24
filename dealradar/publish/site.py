@@ -66,6 +66,7 @@ from . import drop_fresh
 from . import fresh_more_plain
 from . import keep_first_cards
 from . import best_today_tab
+from . import best_today_header
 from . import phone_first_screen
 from . import drop_shuffle
 
@@ -1565,6 +1566,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     from . import word_links
     word_links.publish(out, cfg)
     join_dialog.publish(out, cfg)
+    # Last page pass: the finished home header onto /best-deals-today/.
+    best_today_header.publish(out, cfg, now)
     timed("tools")
     seo_pages = seo.publish_sitemap(db, cfg, now, out, site_url, seo_paths, seo_wall)
     timed("sitemap")
