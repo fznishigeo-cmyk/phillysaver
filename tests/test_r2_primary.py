@@ -536,8 +536,9 @@ def test_size_guard_returns_the_pointer_code_only_with_primary_on(capsys):
     assert check_size(94_999_999, None, 95, r2_primary=True) == 0
 
 
-def test_shipped_off_with_both_lanes_ready_to_restore_from_r2():
-    assert load_config().raw["state"]["r2_primary"] is False
+def test_shipped_on_with_both_lanes_ready_to_restore_from_r2():
+    # On since 2026-10-24 (C4): r2 drill #2 matched git byte for byte on 4841f40.
+    assert load_config().raw["state"]["r2_primary"] is True
     validate_limits({"r2_primary": True, "max_enc_mb": 95})
     root = Path(__file__).resolve().parent.parent
     for lane in ("hourly.yml", "fast.yml"):
