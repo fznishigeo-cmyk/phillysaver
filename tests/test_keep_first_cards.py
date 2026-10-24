@@ -25,6 +25,7 @@ def build(root, on, rows=300):
     cfg = load_config()
     cfg.tracking = {}
     cfg.hide_deal_site_links = False  # keep the coded partner offers, as the budget fixture does
+    cfg.phone_first_screen = False  # it needs this switch: compare the wall with and without this one alone
     if on is None:
         del cfg.keep_first_cards
     else:

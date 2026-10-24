@@ -455,6 +455,7 @@ def pre_task_319_raw(config):
     config.pop("soft_buttons", None)
     config.pop("keep_first_cards", None)
     config.pop("best_today_tab", None)
+    config.pop("phone_first_screen", None)
     config.pop("price_shipping_note", None)
     config.pop("add_to_cart", None)
     pre_social_profiles_raw(config)
@@ -543,6 +544,7 @@ def pre_hide_deal_site_links_raw(config):
     config.pop("soft_buttons", None)
     config.pop("keep_first_cards", None)
     config.pop("best_today_tab", None)
+    config.pop("phone_first_screen", None)
     config.pop("price_shipping_note", None)
     config.pop("add_to_cart", None)
     pre_social_profiles_raw(config)
@@ -569,6 +571,7 @@ def pre_keepa_focus_finder_raw(config):
     config.pop("soft_buttons", None)
     config.pop("keep_first_cards", None)
     config.pop("best_today_tab", None)
+    config.pop("phone_first_screen", None)
     config.pop("price_shipping_note", None)
     config.pop("add_to_cart", None)
     pre_social_profiles_raw(config)
@@ -653,6 +656,7 @@ def pre_keepa_starter_raw(config):
     config.pop("soft_buttons", None)
     config.pop("keep_first_cards", None)
     config.pop("best_today_tab", None)
+    config.pop("phone_first_screen", None)
     config.pop("price_shipping_note", None)
     config.pop("add_to_cart", None)
     pre_social_profiles_raw(config)
@@ -725,6 +729,7 @@ def pre_social_profiles(cfg):
     pre_soft_buttons(cfg)
     pre_keep_first_cards(cfg)
     pre_best_today_tab(cfg)
+    pre_phone_first_screen(cfg)
     return cfg
 
 
@@ -755,6 +760,12 @@ def pre_keep_first_cards(cfg):
 def pre_best_today_tab(cfg):
     """Before the home tab row's "Best today" link pill (operator 2026-10-23 ~20:00Z, A48)."""
     cfg.best_today_tab = False
+    return cfg
+
+
+def pre_phone_first_screen(cfg):
+    """Before phones showed the first deals and their buttons on the first screen (operator 2026-10-23)."""
+    cfg.phone_first_screen = False
     return cfg
 
 

@@ -274,6 +274,7 @@ sticky_buy_bar: true  # operator 2026-10-22: "yes great idea implement it" + "a 
 fresh_more_plain: true  # operator 2026-10-20 ~02:25Z: "say see all 1,000 plus deals. Just keep it at 1,000 plus. And remove that full rotation six drops about 90 minutes. Stop advertising that."
 keep_first_cards: true  # quality loop 2026-10-23: phone LCP / taps -> the home wall's first render keeps the server's cards (patches them in place, same look); an older publication keeps its drop until the next mark; the wall's How boxes are drawn open from the start, as hydration draws them
 best_today_tab: true  # operator 2026-10-23 ~20:00Z: "yes add that button" (A48) -> a "Best today" pill right after Trending in the homepage category row, same look as its neighbours, a real link to /best-deals-today/ (the top 30 had no homepage link), never a filter tab
+phone_first_screen: false  # operator (Nishi) 2026-10-23 ~21:50Z: "The fix: the first 3 deals and their buttons fit on the first screen, with fewer words per card." (computers ~36 of 100 home visitors tap a deal, phones ~2) -> phones (<=640px): a tighter header (one row of tool buttons), one deal per row with the photo on the left, no repeated headline sentence, a "How to get this price" link for step deals; laptops unchanged. OFF until the operator approves the screenshots
 
 site:
   credit_links: false         # plain source attribution; true/missing restores the previous site
