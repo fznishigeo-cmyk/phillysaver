@@ -12,7 +12,7 @@ import pytest
 from dealradar.config import AppConfig, load_config
 from dealradar.db import DB
 from dealradar.publish import keep_first_cards as feature, site
-from tests.history_pins import pre_keep_first_cards, pre_social_profiles
+from tests.history_pins import pre_keep_first_cards, pre_short_cards, pre_social_profiles
 from tests.phone_budget_fixture import NOW, fixture_offers
 from tests.test_search_amazon import run_node
 from tests.test_support import NOW as TEST_NOW, render
@@ -26,6 +26,7 @@ def build(root, on, rows=300):
     cfg.tracking = {}
     cfg.hide_deal_site_links = False  # keep the coded partner offers, as the budget fixture does
     cfg.phone_first_screen = False  # it needs this switch: compare the wall with and without this one alone
+    cfg.short_cards = False  # its own How box and lines: tests/test_short_cards.py
     if on is None:
         del cfg.keep_first_cards
     else:
@@ -100,7 +101,7 @@ def test_static_wall_draws_the_script_how_box(tmp_path):
 @pytest.mark.parametrize("tidy", [True, False])
 def test_static_how_box_matches_the_script(tmp_path, tidy):
     from tests.test_publish_site import make_deal
-    cfg = load_config()
+    cfg = pre_short_cards(load_config())  # short_cards draws its own How box: tests/test_short_cards.py
     cfg.card_tidy = tidy
     cfg.non_amazon_freshness_enabled = False
     out, doc, *_ = render(tmp_path, cfg, [make_deal(dedupe_key=f"how-{i}", item=f"Product{i} kitchen set",

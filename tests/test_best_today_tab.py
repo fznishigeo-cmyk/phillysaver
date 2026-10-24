@@ -8,7 +8,7 @@ import pytest
 from dealradar.config import AppConfig, load_config
 from dealradar.publish import best_today_tab, site
 from scripts.publication_budget import analyze
-from tests.history_pins import pre_front_mix, pre_social_profiles
+from tests.history_pins import pre_front_mix, pre_short_cards, pre_social_profiles
 from tests.phone_budget_fixture import publish_fixture, visible_offer_count
 from tests.test_publish_site import make_deal
 from tests.test_support import NOW, render
@@ -95,7 +95,7 @@ def test_on_pill_after_trending_on_the_home_row_only(tmp_path, monkeypatch):
 
 def test_phone_budget_cost_is_bounded(tmp_path):
     """The home reserve tests pin the pill off; its own cost is bounded here, under every ceiling."""
-    cfg = pre_front_mix(load_config())
+    cfg = pre_short_cards(pre_front_mix(load_config()))  # measured before short_cards moved the script's bytes
     cfg.phone_budget["enabled"] = True
     metrics = {}
     for on in (False, True):

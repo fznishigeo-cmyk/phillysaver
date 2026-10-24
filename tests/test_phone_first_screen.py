@@ -11,7 +11,8 @@ from dealradar.config import AppConfig, load_config
 from dealradar.db import DB
 from dealradar.publish import hide_timer_ticker, keep_first_cards, phone_first_screen as feature, site
 from scripts.publication_budget import analyze
-from tests.history_pins import pre_best_today_tab, pre_front_mix, pre_phone_first_screen, pre_social_profiles
+from tests.history_pins import (pre_best_today_tab, pre_front_mix, pre_phone_first_screen, pre_short_cards,
+                                pre_social_profiles)
 from tests.phone_budget_fixture import NOW, fixture_offers, publish_fixture, visible_offer_count
 from tests.test_keep_first_cards import files, probe
 from tests.test_search_amazon import run_node
@@ -23,6 +24,7 @@ def config(on, **changes):
     cfg = load_config()
     cfg.tracking = {}
     cfg.hide_deal_site_links = False  # keep the coded partner offers, as the budget fixture does
+    pre_short_cards(cfg)  # short_cards replaces the How box and its link: tests/test_short_cards.py
     for name, value in changes.items():
         setattr(cfg, name, value)
     if on is None:
@@ -144,6 +146,7 @@ def test_phone_budget_with_the_switch_on(tmp_path, links):
     sizes = {}
     for on in (False, True) if not links else (True,):
         cfg = pre_best_today_tab(pre_front_mix(load_config()))  # the pill's bytes: test_best_today_tab
+        pre_short_cards(cfg)  # this switch's own bytes; with short_cards: tests/test_short_cards.py
         cfg.phone_first_screen = on
         cfg.phone_budget["enabled"] = True
         if links:

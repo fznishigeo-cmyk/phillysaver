@@ -16,6 +16,7 @@ from tests.test_support import NOW
 site.util_now=lambda:NOW
 cfg=load_config()
 cfg.sticky_buy_bar=True
+cfg.short_cards=False  # its shorter related cards leave too little page below "halfway"
 cfg.tracking={}
 cfg.affiliate_amazon_tag="example-20"
 rows=[make_deal(dedupe_key=f"sticky-kettle-{i}", item=f"Stainless steel electric kettle 1.7L, auto shut-off, model {i}",

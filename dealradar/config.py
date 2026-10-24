@@ -439,6 +439,8 @@ class AppConfig:
     hide_spotter_recommends: bool = False  # no "wowpriced recommends" strip in the analyzer box
     plural_highly_rated: bool = False  # "See highly rated vacuums": the yellow button's plural, when safe
     equal_word_buttons: bool = False   # the words box's two buttons at the wider one's width
+    short_cards: bool = False          # deal cards: no repeated headline sentence, titles in two lines
+    best_today_phone_cards: bool = False  # /best-deals-today/ phones: the home page's phone card layout
     search_circle: bool = False
     search_analyze: dict = field(default_factory=lambda: validated_search_analyze(None))
     analyze_top_sellers: bool = False
@@ -1379,6 +1381,10 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.equal_word_buttons = g("equal_word_buttons", default=False)
     if type(cfg.equal_word_buttons) is not bool:
         raise ValueError("equal_word_buttons must be a boolean")
+    for name in ("short_cards", "best_today_phone_cards"):
+        setattr(cfg, name, g(name, default=False))
+        if type(getattr(cfg, name)) is not bool:
+            raise ValueError(f"{name} must be a boolean")
     cfg.search_circle = g("search_circle", default=False)
     if type(cfg.search_circle) is not bool:
         raise ValueError("search_circle must be a boolean")

@@ -460,6 +460,8 @@ def pre_task_319_raw(config):
     config.pop("hide_spotter_recommends", None)
     config.pop("plural_highly_rated", None)
     config.pop("equal_word_buttons", None)
+    config.pop("short_cards", None)
+    config.pop("best_today_phone_cards", None)
     config.pop("price_shipping_note", None)
     config.pop("add_to_cart", None)
     pre_social_profiles_raw(config)
@@ -553,6 +555,8 @@ def pre_hide_deal_site_links_raw(config):
     config.pop("hide_spotter_recommends", None)
     config.pop("plural_highly_rated", None)
     config.pop("equal_word_buttons", None)
+    config.pop("short_cards", None)
+    config.pop("best_today_phone_cards", None)
     config.pop("price_shipping_note", None)
     config.pop("add_to_cart", None)
     pre_social_profiles_raw(config)
@@ -584,6 +588,8 @@ def pre_keepa_focus_finder_raw(config):
     config.pop("hide_spotter_recommends", None)
     config.pop("plural_highly_rated", None)
     config.pop("equal_word_buttons", None)
+    config.pop("short_cards", None)
+    config.pop("best_today_phone_cards", None)
     config.pop("price_shipping_note", None)
     config.pop("add_to_cart", None)
     pre_social_profiles_raw(config)
@@ -673,6 +679,8 @@ def pre_keepa_starter_raw(config):
     config.pop("hide_spotter_recommends", None)
     config.pop("plural_highly_rated", None)
     config.pop("equal_word_buttons", None)
+    config.pop("short_cards", None)
+    config.pop("best_today_phone_cards", None)
     config.pop("price_shipping_note", None)
     config.pop("add_to_cart", None)
     pre_social_profiles_raw(config)
@@ -751,6 +759,8 @@ def pre_social_profiles(cfg):
     pre_hide_spotter_recommends(cfg)
     pre_plural_highly_rated(cfg)
     pre_equal_word_buttons(cfg)
+    pre_short_cards(cfg)
+    pre_best_today_phone_cards(cfg)
     return cfg
 
 
@@ -817,6 +827,18 @@ def pre_plural_highly_rated(cfg):
 def pre_equal_word_buttons(cfg):
     """Before the words box's two buttons shared the wider one's width (operator 2026-10-24 ~03:55Z)."""
     cfg.equal_word_buttons = False
+    return cfg
+
+
+def pre_short_cards(cfg):
+    """Before the shorter deal cards: no headline, steps and "Enter Code" lines, smaller Get deal (operator 2026-10-24, A58)."""
+    cfg.short_cards = False
+    return cfg
+
+
+def pre_best_today_phone_cards(cfg):
+    """Before /best-deals-today/ showed the home page's phone cards (operator 2026-10-24)."""
+    cfg.best_today_phone_cards = False
     return cfg
 
 

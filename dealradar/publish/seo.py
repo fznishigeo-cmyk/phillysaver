@@ -38,7 +38,7 @@ from .price_history import chart_html as price_history_chart, STYLE as PRICE_HIS
 from . import amazon_history, checker
 from .. import amazon_reference
 from . import amazon_as_of, event_pages, inventory, manifest_refresh, product_pages, seo_audit, traffic
-from . import add_to_cart
+from . import add_to_cart, short_cards
 from .indexnow import INDEXNOW_FILE, INDEXNOW_ENDPOINT, KEY_RE as _KEY_RE, due_list_path, indexnow_due
 
 logger = logging.getLogger("dealradar.publish.seo")
@@ -186,11 +186,12 @@ def _outbound_attrs(d: dict[str, Any]) -> str:
 def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
               now: datetime | None = None, *, photo: bool = False,
               static_photos: bool = False, credit_links: bool = True, fresh_config=None,
-              client_how: bool = False) -> str:
+              client_how: bool = False, short: bool = False) -> str:
     """One free or dead wall card; never a locked stub. static_photos draws
     HTTPS photos, with photo reserving eager loading. With the switch off,
     photo retains the home page's original first-four image markup. client_how
-    draws the How box as the page script does (keep_first_cards)."""
+    draws the How box as the page script does (keep_first_cards); short, the
+    shorter card (short_cards)."""
     e = lambda v: escape(str(v if v is not None else ""))
     dead = d.get("status") == "dead"
     spotlight = d.get("spotlight") or {}
@@ -289,10 +290,13 @@ def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
         for c in d.get("credits") or [])
     how = ""
     checkout = d.get("checkout") or {}
+    lines = short_cards.lines_html(d, client_how) if short else ""
     if client_how:
         from .keep_first_cards import how_html
         from .phone_first_screen import steps_html
-        how = how_html(d, fresh_config) + steps_html(d, page, fresh_config)
+        how = (short_cards.how_html(d, lines) if short else how_html(d, fresh_config)) + steps_html(d, page, fresh_config)
+    elif short:
+        how = short_cards.how_html(d, lines)
     elif not dead and (checkout.get("summary") or d.get("needs_steps")):
         steps = " &rarr; ".join(e(x) for x in d.get("how") or [])
         codes = "".join(f'<code class="code">{e(c)}</code>' for c in d.get("codes") or [])
@@ -311,15 +315,15 @@ def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
             + ('<div class="price-unconfirmed">Price not confirmed</div>' if d.get("price_unconfirmed") else "")
             + (f'<div class="price-aged">{e(d["price_aged"])}</div>' if d.get("price_aged") else "")
             + f'<h3 class="title">{title}</h3>'
-            + (f'<div class="headline">{e(d["headline"])}</div>' if d.get("headline") else "")
-            + checkout_prices.html(d) + how + f'<div class="metarow">{meta}</div><div class="actions">{actions}</div>'
+            + (f'<div class="headline">{e(d["headline"])}</div>' if d.get("headline") and not short else "")
+            + checkout_prices.html(d) + lines + how + f'<div class="metarow">{meta}</div><div class="actions">{actions}</div>'
             "</div></article>")
 
 
 def cards_html(rows: list[dict[str, Any]], deal_paths: dict[str, str] | None = None,
                now: datetime | None = None, *, static_photos: bool = False,
                eager_photos: int = 4, credit_links: bool = True, fresh_config=None,
-               client_how: bool = False) -> str:
+               client_how: bool = False, short: bool = False) -> str:
     """A static grid: reserve eager loading for the page's first four photos."""
     if not credit_links:
         rows = place_gone(rows, every=10)
@@ -328,7 +332,7 @@ def cards_html(rows: list[dict[str, Any]], deal_paths: dict[str, str] | None = N
     return "".join(card_html(d, deal_paths, now, static_photos=static_photos,
                              photo=static_photos and id(d) in eager,
                              credit_links=credit_links, fresh_config=fresh_config,
-                             client_how=client_how) for d in rows)
+                             client_how=client_how, short=short) for d in rows)
 
 
 def _locked_line(stubs: list[dict[str, Any]], where: str) -> str:
@@ -407,7 +411,7 @@ def static_wall(teaser: list[dict[str, Any]], open_access: bool = False,
                 deal_paths: dict[str, str] | None = None, now: datetime | None = None,
                 front_page: dict | None = None, spotlight: list[dict[str, Any]] | None = None,
                 *, static_photos: bool = False, credit_links: bool = True, same_product_spacing: bool = False, fresh_config=None,
-                fresh_mark: int | None = None) -> str:
+                fresh_mark: int | None = None, short: bool = False) -> str:
     """Public cards inline, with the JS spacing rules and a static card cap."""
     spotlight = spotlight or []
     fresh_rows = teaser + spotlight if fresh_config is not None else []
@@ -447,7 +451,7 @@ def static_wall(teaser: list[dict[str, Any]], open_access: bool = False,
     html += '<h2 class="secth sr-only">Verified deals right now</h2>'
     if spotlight:
         html += '<div class="grid spotlight-grid">' + cards_html(
-            spotlight, deal_paths, now, static_photos=static_photos, credit_links=credit_links) + '</div>'
+            spotlight, deal_paths, now, static_photos=static_photos, credit_links=credit_links, short=short) + '</div>'
     if free:
         from . import keep_first_cards
         client_how = fresh_config is not None and keep_first_cards.enabled(fresh_config)
@@ -455,12 +459,12 @@ def static_wall(teaser: list[dict[str, Any]], open_access: bool = False,
         if static_photos:
             eager = max(0, 4 - sum(str(d.get("image_url") or "").startswith("https://") for d in spotlight))
             cards = cards_html(free, deal_paths, now, static_photos=True, eager_photos=eager,
-                               credit_links=credit_links, fresh_config=fresh_config, client_how=client_how)
+                               credit_links=credit_links, fresh_config=fresh_config, client_how=client_how, short=short)
         else:
             photos = {id(d) for d in [d for d in free if d.get("image_url")][:4]}
             cards = "".join(card_html(d, deal_paths, now, photo=id(d) in photos,
                                       credit_links=credit_links, fresh_config=fresh_config,
-                                      client_how=client_how) for d in free)
+                                      client_how=client_how, short=short) for d in free)
         html += '<div class="grid">' + cards + "</div>"
     if more:
         n = ("1,000+" if more >= 1000 else f"{more // 100 * 100:,}+"  # never the exact count
@@ -654,7 +658,8 @@ def _hub_page(template: str, copy: dict[str, str], label: str, slug: str,
               site_url: str, open_access: bool = False,
               deal_paths: dict[str, str] | None = None, now: datetime | None = None,
               *, page_number: int = 1, page_count: int = 1, paginate: bool = False,
-              product_links: str = "", static_photos: bool = False, credit_links: bool = True) -> str:
+              product_links: str = "", static_photos: bool = False, credit_links: bool = True,
+              short: bool = False) -> str:
     """One hub: its copy, our 7-day numbers, the category's free deals (the
     top _HUB_MAX) and its locked count and % range."""
     free = [d for d in rows if not d.get("locked")]
@@ -669,12 +674,14 @@ def _hub_page(template: str, copy: dict[str, str], label: str, slug: str,
             if n else "We publish offers in this category only when they pass our price checks.")
     if open_access:
         deals = "<h2>Deals right now</h2>" + (
-            '<div class="grid">' + cards_html(free, deal_paths, now, static_photos=static_photos, credit_links=credit_links) + "</div>" if free else
+            '<div class="grid">' + cards_html(free, deal_paths, now, static_photos=static_photos, credit_links=credit_links,
+                                              short=short) + "</div>" if free else
             '<p class="muted">This category features offers that pass our price checks. '
             'Explore <a href="/">all live deals</a>.</p>')
     else:
         deals = "<h2>Free right now</h2>" + (
-            '<div class="grid">' + cards_html(free, deal_paths, now, static_photos=static_photos, credit_links=credit_links) + "</div>" if free else
+            '<div class="grid">' + cards_html(free, deal_paths, now, static_photos=static_photos, credit_links=credit_links,
+                                              short=short) + "</div>" if free else
             '<p class="muted">Browse the current free deals on <a href="/">the deal wall</a>. '
             'They rotate at every drop.</p>')
     if more:
@@ -748,14 +755,15 @@ def _best_summary(rows: list[dict[str, Any]]) -> str:
 
 
 def _listing_pages(template, heading, intro, root, site_url, rows, paths, now,
-                   floor, paginate, family, *, static_photos=False, credit_links=True):
+                   floor, paginate, family, *, static_photos=False, credit_links=True, short=False):
     count = max(1, math.ceil(len(rows) / _HUB_MAX)) if paginate else 1
     for number in range(1, count + 1):
         path = inventory.page_path(root, number)
         shown = rows[(number - 1) * _HUB_MAX:number * _HUB_MAX]
         page_heading = heading + (f" — Page {number}" if number > 1 else "")
         content = ('<h2 class="sr-only">Deals right now</h2><div class="grid">'
-                   + cards_html(shown, paths, now, static_photos=static_photos, credit_links=credit_links) + '</div>')
+                   + cards_html(shown, paths, now, static_photos=static_photos, credit_links=credit_links,
+                                short=short) + '</div>')
         if paginate:
             content += inventory.pagination(root, number, count, family)
         breadcrumbs = [(heading, root), (f"Page {number}", path)] if number > 1 else None
@@ -802,7 +810,7 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
                discovery: str = "", sharing: str = "", share_head: str = "",
                also_at: str = "", lowest_seen: str = "", app_amazon: bool = False,
                static_photos: bool = False, credit_links: bool = True, cart: str = "",
-               trusted: str = "") -> str:
+               trusted: str = "", short: bool = False) -> str:
     from .site import linked_disclosure
 
     dead = d.get("status") == "dead"
@@ -925,7 +933,7 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
         grid = 'grid related-grid' if static_photos else 'grid'
         content += f'<h2>Related live deals</h2><div class="{grid}">' + cards_html(
             related, paths, now, static_photos=static_photos, eager_photos=3 if hero else 4,
-            credit_links=credit_links) + '</div>'
+            credit_links=credit_links, short=short) + '</div>'
     ld = ""
     # Google requires a product image for merchant listings (Search Console,
     # 2026-10-14: "Missing field image" is critical): no photo, no Product
@@ -1152,7 +1160,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     wall = static_wall(teaser, open_access, paths, now, cfg.front_page, spotlight,
                        static_photos=cfg.static_photos, credit_links=cfg.credit_links,
                        same_product_spacing=cfg.same_product_spacing,
-                       fresh_config=cfg if drop_fresh.enabled(cfg) else None,
+                       fresh_config=cfg if drop_fresh.enabled(cfg) else None, short=short_cards.enabled(cfg),
                        fresh_mark=int((parse_iso(meta.get("published_at")) or now).timestamp()) // (cfg.drop_minutes * 60))
     index = (out / "index.html").read_text(encoding="utf-8")
     groups = json.dumps([list(g) for g in CATGROUPS]).replace("<", "\\u003c")
@@ -1280,7 +1288,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
                           static_photos=cfg.static_photos, credit_links=cfg.credit_links,
                           cart=add_to_cart.deal_button(d, cfg),
                           trusted=trusted_line(original_facts.get(d["dedupe_key"], d), cfg)
-                          if d.get("badge") == "trusted" else "")
+                          if d.get("badge") == "trusted" else "", short=short_cards.enabled(cfg))
         folder = out / path.strip("/")
         folder.mkdir(parents=True, exist_ok=True)
         (folder / "index.html").write_text(html, encoding="utf-8")
@@ -1308,7 +1316,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     best_rows = mix_lead(pick_order(confirmed, cfg.front_page), best_fp, best_extra)[:30]
     best_content = ('<h2 class="sr-only">Best live deals</h2>' + _best_summary(best_rows)
                     + '<div class="grid">' + cards_html(best_rows, paths, now, static_photos=cfg.static_photos,
-                                                       credit_links=cfg.credit_links)
+                                                       credit_links=cfg.credit_links, short=short_cards.enabled(cfg))
                     + '</div>' if best_rows else '<p><a href="/">Explore current verified deals</a>.</p>')
     best_html = _landing_page(template, best_title, best_title.removesuffix(" | wowpriced"),
                               intro, best_path, site_url, best_content,
@@ -1331,14 +1339,14 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
         family = "store" if path in stores else "price"
         for page, html in _listing_pages(page_template, heading, intro, path, site_url, rows,
                 paths, now, floors[family], cfg.traffic_hub_pagination_enabled, family,
-                static_photos=cfg.static_photos, credit_links=cfg.credit_links):
+                static_photos=cfg.static_photos, credit_links=cfg.credit_links, short=short_cards.enabled(cfg)):
             _write_page(out, page, html)
             if page != path:
                 inventory_paths.append(page)
     for path, (name, rows) in families.items():
         for page, html in _listing_pages(template, f"{name} offers", amazon_reference.template(inventory.family_intro(rows), cfg),
                 path, site_url, rows, paths, now, floors["product_family"], True, "product_family",
-                static_photos=cfg.static_photos, credit_links=cfg.credit_links):
+                static_photos=cfg.static_photos, credit_links=cfg.credit_links, short=short_cards.enabled(cfg)):
             _write_page(out, page, html)
             inventory_paths.append(page)
     # Re-used output folders must lose pages that fall below a floor or cap.
@@ -1363,7 +1371,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
                              site_url, open_access, paths, now, page_number=number, page_count=count,
                              paginate=cfg.traffic_hub_pagination_enabled,
                              static_photos=cfg.static_photos,
-                             credit_links=cfg.credit_links,
+                             credit_links=cfg.credit_links, short=short_cards.enabled(cfg),
                              product_links=product_pages.hub_links(products, group)
                              if number == 1 and cfg.seo_product_pages_enabled and not amazon_reference.enabled(cfg) else "")
             path = inventory.page_path(hub_href(slug), number)
