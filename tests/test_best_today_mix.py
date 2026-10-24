@@ -13,6 +13,7 @@ from dealradar import best_today_mix, front_mix
 from dealradar.config import load_config
 from dealradar.db import DB
 from dealradar.publish import site
+from tests import history_pins
 from tests.history_pins import pre_best_today_mix, pre_social_profiles, pre_social_profiles_raw
 from tests.test_publish_site import make_deal
 
@@ -187,8 +188,21 @@ def test_published_top_30(tmp_path, monkeypatch, supply):
     assert all(d.get("mx") == front_mix.bucket(d, cfg.front_page) for d in doc["deals"])
 
 
+# Switches shipped after this test's recording (same release, 2026-10-24); pinned off so the
+# recorded hash keeps checking only this mix.
+LATER = ("pre_hot_find", "pre_best_today_header", "pre_hide_spotter_recommends", "pre_plural_highly_rated",
+         "pre_equal_word_buttons", "pre_short_cards", "pre_best_today_phone_cards")
+
+
+def later_pinned(cfg):
+    for name in LATER:
+        if hasattr(history_pins, name):
+            getattr(history_pins, name)(cfg)
+    return cfg
+
+
 def test_off_absent_and_homepage_bytes(tmp_path, monkeypatch):
-    cfg, deals = load_config(), inventory()
+    cfg, deals = later_pinned(load_config()), inventory()
     on = build(tmp_path / "on", cfg, deals, monkeypatch)
     cfg.front_page["best_today_mix"]["enabled"] = False
     off = build(tmp_path / "off", cfg, deals, monkeypatch)
